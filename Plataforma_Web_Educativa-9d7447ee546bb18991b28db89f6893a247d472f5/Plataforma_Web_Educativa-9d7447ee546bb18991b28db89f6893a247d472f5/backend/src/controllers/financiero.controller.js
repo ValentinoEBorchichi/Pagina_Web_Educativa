@@ -1,8 +1,6 @@
 const db = require('../config/database');
 const PDFDocument = require('pdfkit');
-
-// Un nombre/apellido válido solo tiene letras, espacios y signos básicos (sin números ni símbolos).
-const NOMBRE_REGEX = /^[\p{L}\s'’.-]+$/u;
+const { NOMBRE_REGEX } = require('../utils/validators');
 
 // --- PERSONAL ---
 exports.getPersonal = (req, res) => {

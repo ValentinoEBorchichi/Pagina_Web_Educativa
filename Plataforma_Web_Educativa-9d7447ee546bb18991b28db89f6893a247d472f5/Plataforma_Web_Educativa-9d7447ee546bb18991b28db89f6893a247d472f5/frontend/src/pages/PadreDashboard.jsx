@@ -35,8 +35,8 @@ const PadreDashboard = () => {
         try {
             const response = await apiFetch(`${API_URL}/api/financiero/comprobante/${pagoId}`);
             if (!response.ok) {
-                const d = await response.json().catch(() => ({}));
-                return alert(d.message || 'No se pudo generar el comprobante');
+                const errorBody = await response.json().catch(() => ({}));
+                return alert(errorBody.message || 'No se pudo generar el comprobante');
             }
             const blob = await response.blob();
             const url = URL.createObjectURL(blob);

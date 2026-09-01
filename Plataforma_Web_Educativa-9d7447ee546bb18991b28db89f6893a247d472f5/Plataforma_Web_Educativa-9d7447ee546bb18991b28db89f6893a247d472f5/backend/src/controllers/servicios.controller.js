@@ -59,7 +59,6 @@ exports.getInstalaciones = (req, res) => {
 exports.reservarInstalacion = (req, res) => {
     const { instalacion_id, fecha, hora_inicio, hora_fin, reservado_por, motivo } = req.body;
     
-    // Validar disponibilidad
     const checkQuery = `
         SELECT COUNT(*) as count FROM instalaciones_reservas 
         WHERE instalacion_id = ? AND fecha = ? 

@@ -2,10 +2,7 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const db = require('../config/database');
 require('dotenv').config();
-
-// Un nombre válido solo tiene letras (con acentos/ñ), espacios y signos básicos
-// de nombres (apóstrofo, punto, guion). No se aceptan números ni otros símbolos.
-const NOMBRE_REGEX = /^[\p{L}\s'’.-]+$/u;
+const { NOMBRE_REGEX } = require('../utils/validators');
 
 // Política de complejidad de contraseña (solo para crear/registrar cuentas nuevas).
 // No afecta el login de cuentas ya existentes. Devuelve '' si es válida o el mensaje.

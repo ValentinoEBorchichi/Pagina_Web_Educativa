@@ -2,10 +2,7 @@ import { API_URL } from '../config';
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import DashboardLayout from '../components/DashboardLayout';
-
-// Un nombre válido (nivel, materia, actividad) solo tiene letras, espacios y signos básicos (sin números ni símbolos).
-const NOMBRE_REGEX = /^[\p{L}\s'’.-]+$/u;
-const esNombreValido = (texto) => NOMBRE_REGEX.test(String(texto || '').trim());
+import { esNombreValido } from '../utils/validadores';
 
 const AdminDashboard = () => {
     const [activeTab, setActiveTab] = useState('preinscripciones');
@@ -74,7 +71,7 @@ const AdminDashboard = () => {
             body: JSON.stringify(datos)
         });
         if (response.ok) { form.reset(); fetchUsuarios(); }
-        else { const d = await response.json(); alert(d.message || 'Error al crear el usuario'); }
+        else { const errorBody = await response.json(); alert(errorBody.message || 'Error al crear el usuario'); }
     };
 
     const updateUserRol = async (id, rol) => {
@@ -84,14 +81,14 @@ const AdminDashboard = () => {
             body: JSON.stringify({ rol })
         });
         if (response.ok) fetchUsuarios();
-        else { const d = await response.json(); alert(d.message || 'Error al cambiar el rol'); }
+        else { const errorBody = await response.json(); alert(errorBody.message || 'Error al cambiar el rol'); }
     };
 
     const deleteUsuario = async (id) => {
         if (!window.confirm('¿Eliminar este usuario? Esta acción no se puede deshacer.')) return;
         const response = await apiFetch(`${API_URL}/api/auth/users/${id}`, { method: 'DELETE' });
         if (response.ok) fetchUsuarios();
-        else { const d = await response.json(); alert(d.message || 'Error al eliminar el usuario'); }
+        else { const errorBody = await response.json(); alert(errorBody.message || 'Error al eliminar el usuario'); }
     };
 
     const fetchHorarios = async () => {
@@ -132,7 +129,7 @@ const AdminDashboard = () => {
             body: JSON.stringify(datos)
         });
         if (response.ok) { form.reset(); fetchHorarios(); }
-        else { const d = await response.json(); alert(d.message || 'Error al crear el horario'); }
+        else { const errorBody = await response.json(); alert(errorBody.message || 'Error al crear el horario'); }
     };
 
     const deleteHorario = async (id) => {
@@ -175,7 +172,7 @@ const AdminDashboard = () => {
             body: JSON.stringify(datos)
         });
         if (response.ok) { form.reset(); setEditingMateria(null); fetchMaterias(); }
-        else { const d = await response.json(); alert(d.message || 'Error al guardar materia'); }
+        else { const errorBody = await response.json(); alert(errorBody.message || 'Error al guardar materia'); }
     };
 
     const deleteMateria = async (id) => {
@@ -205,7 +202,7 @@ const AdminDashboard = () => {
             body: JSON.stringify(datos)
         });
         if (response.ok) { form.reset(); setEditingActividad(null); fetchActividades(); }
-        else { const d = await response.json(); alert(d.message || 'Error al guardar actividad'); }
+        else { const errorBody = await response.json(); alert(errorBody.message || 'Error al guardar actividad'); }
     };
 
     const deleteActividad = async (id) => {
@@ -392,15 +389,25 @@ const AdminDashboard = () => {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ nombre })
         });
-        if (response.ok) { form.reset(); setEditingNivel(null); fetchNiveles(); }
-        else { const d = await response.json().catch(() => ({})); alert(d.message || 'Error al guardar el nivel'); }
+        if (response.ok) {
+            form.reset();
+            setEditingNivel(null);
+            fetchNiveles();
+        } else {
+            const errorBody = await response.json().catch(() => ({}));
+            alert(errorBody.message || 'Error al guardar el nivel');
+        }
     };
 
     const deleteNivel = async (id) => {
         if (!window.confirm('¿Eliminar este nivel educativo?')) return;
         const response = await apiFetch(`${API_URL}/api/academico/niveles/${id}`, { method: 'DELETE' });
-        if (response.ok) fetchNiveles();
-        else { const d = await response.json().catch(() => ({})); alert(d.message || 'No se pudo eliminar el nivel'); }
+        if (response.ok) {
+            fetchNiveles();
+        } else {
+            const errorBody = await response.json().catch(() => ({}));
+            alert(errorBody.message || 'No se pudo eliminar el nivel');
+        }
     };
 
     const fetchPersonal = async () => {
@@ -681,7 +688,7 @@ const AdminDashboard = () => {
                 body: JSON.stringify(cuotaData)
             });
             if (response.ok) { form.reset(); fetchFinanzas(); }
-            else { const d = await response.json().catch(() => ({})); alert(d.message || 'Error al guardar la cuota'); }
+            else { const errorBody = await response.json().catch(() => ({})); alert(errorBody.message || 'Error al guardar la cuota'); }
         } catch (error) { console.error(error); }
     };
 
@@ -697,8 +704,8 @@ const AdminDashboard = () => {
         try {
             const response = await apiFetch(`${API_URL}/api/financiero/comprobante/${pagoId}`);
             if (!response.ok) {
-                const d = await response.json().catch(() => ({}));
-                return alert(d.message || 'No se pudo generar el comprobante');
+                const errorBody = await response.json().catch(() => ({}));
+                return alert(errorBody.message || 'No se pudo generar el comprobante');
             }
             const blob = await response.blob();
             const url = URL.createObjectURL(blob);
@@ -738,7 +745,7 @@ const AdminDashboard = () => {
                     descargarComprobante(data.pago_id);
                 }
             }
-            else { const d = await response.json().catch(() => ({})); alert(d.message || 'Error al registrar el pago'); }
+            else { const errorBody = await response.json().catch(() => ({})); alert(errorBody.message || 'Error al registrar el pago'); }
         } catch (error) { console.error(error); alert('Error de conexión'); }
     };
 
@@ -780,7 +787,7 @@ const AdminDashboard = () => {
             body: JSON.stringify(datos)
         });
         if (response.ok) { form.reset(); alert('Alumno asignado a la ruta correctamente.'); }
-        else { const d = await response.json().catch(() => ({})); alert(d.message || 'Error al asignar el alumno a la ruta'); }
+        else { const errorBody = await response.json().catch(() => ({})); alert(errorBody.message || 'Error al asignar el alumno a la ruta'); }
     };
 
     const deleteRuta = async (id) => {

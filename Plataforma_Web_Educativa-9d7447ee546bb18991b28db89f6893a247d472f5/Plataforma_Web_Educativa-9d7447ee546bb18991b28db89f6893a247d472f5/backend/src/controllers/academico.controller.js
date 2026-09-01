@@ -1,7 +1,5 @@
 const db = require('../config/database');
-
-// Un nombre/apellido válido solo tiene letras, espacios y signos básicos (sin números ni símbolos).
-const NOMBRE_REGEX = /^[\p{L}\s'’.-]+$/u;
+const { NOMBRE_REGEX } = require('../utils/validators');
 
 // --- NIVELES ---
 exports.getNiveles = (req, res) => {
@@ -126,7 +124,6 @@ exports.createAlumno = (req, res) => {
         return res.status(400).json({ message: "El DNI debe ser numérico (sin puntos ni letras)" });
     }
 
-    // Validar cupo si se asigna curso
     if (curso_id) {
         db.get("SELECT cupo, (SELECT COUNT(*) FROM alumnos WHERE curso_id = ?) as inscriptos FROM cursos WHERE id = ?", [curso_id, curso_id], (err, curso) => {
             if (err) return res.status(500).json({ message: err.message });
@@ -384,6 +381,47 @@ exports.getMisHijos = (req, res) => {
     });
 };
 
+// Cada una de estas tres funciones resuelve una sola pregunta sobre el alumno
+// (promedio, asistencia o listado de notas). getResumenHijo antes hacía las
+// cuatro cosas —verificar acceso, calcular promedio, calcular asistencia y
+// listar calificaciones— en un único callback anidado; separarlas permite
+// leer y probar cada cálculo de forma independiente.
+function calcularPromedio(alumno_id, callback) {
+    db.get("SELECT AVG(nota) AS prom FROM calificaciones WHERE alumno_id = ?", [alumno_id], (err, row) => {
+        const promedio = (!err && row && row.prom != null) ? Math.round(row.prom * 100) / 100 : null;
+        callback(promedio);
+    });
+}
+
+function calcularAsistencia(alumno_id, callback) {
+    const query = `
+        SELECT COUNT(*) AS total,
+               SUM(CASE WHEN estado = 'Presente' THEN 1 ELSE 0 END) AS presentes,
+               SUM(CASE WHEN estado = 'Ausente' THEN 1 ELSE 0 END) AS faltas
+        FROM asistencias WHERE alumno_id = ?
+    `;
+    db.get(query, [alumno_id], (err, row) => {
+        if (err || !row) return callback({ total_clases: 0, presentes: 0, faltas: 0, asistencia_pct: null });
+        callback({
+            total_clases: row.total || 0,
+            presentes: row.presentes || 0,
+            faltas: row.faltas || 0,
+            asistencia_pct: row.total ? Math.round((row.presentes / row.total) * 100) : null
+        });
+    });
+}
+
+function obtenerCalificacionesAlumno(alumno_id, callback) {
+    const query = `
+        SELECT materias.nombre AS materia_nombre, c.nota, c.trimestre
+        FROM calificaciones c
+        LEFT JOIN materias ON c.materia_id = materias.id
+        WHERE c.alumno_id = ?
+        ORDER BY materias.nombre, c.trimestre
+    `;
+    db.all(query, [alumno_id], (err, rows) => callback(!err && rows ? rows : []));
+}
+
 // Resumen académico de un hijo (rol padre, solo lectura): promedio, asistencia
 // y faltas reales calculados desde calificaciones y asistencias. Restringido a
 // los alumnos cuyo tutor_id sea el padre logueado.
@@ -395,39 +433,12 @@ exports.getResumenHijo = (req, res) => {
         if (err) return res.status(500).json({ message: err.message });
         if (!alumno) return res.status(403).json({ message: "No tenés acceso a este alumno" });
 
-        const resumen = { promedio: null, total_clases: 0, presentes: 0, faltas: 0, asistencia_pct: null, calificaciones: [] };
-
-        db.serialize(() => {
-            db.get("SELECT AVG(nota) AS prom FROM calificaciones WHERE alumno_id = ?", [alumno_id], (e, r) => {
-                if (!e && r && r.prom != null) resumen.promedio = Math.round(r.prom * 100) / 100;
+        calcularPromedio(alumno_id, (promedio) => {
+            calcularAsistencia(alumno_id, (asistencia) => {
+                obtenerCalificacionesAlumno(alumno_id, (calificaciones) => {
+                    res.json({ promedio, ...asistencia, calificaciones });
+                });
             });
-            db.get(
-                `SELECT COUNT(*) AS total,
-                        SUM(CASE WHEN estado = 'Presente' THEN 1 ELSE 0 END) AS presentes,
-                        SUM(CASE WHEN estado = 'Ausente' THEN 1 ELSE 0 END) AS faltas
-                 FROM asistencias WHERE alumno_id = ?`,
-                [alumno_id],
-                (e, r) => {
-                    if (!e && r) {
-                        resumen.total_clases = r.total || 0;
-                        resumen.presentes = r.presentes || 0;
-                        resumen.faltas = r.faltas || 0;
-                        resumen.asistencia_pct = r.total ? Math.round((r.presentes / r.total) * 100) : null;
-                    }
-                }
-            );
-            db.all(
-                `SELECT materias.nombre AS materia_nombre, c.nota, c.trimestre
-                 FROM calificaciones c
-                 LEFT JOIN materias ON c.materia_id = materias.id
-                 WHERE c.alumno_id = ?
-                 ORDER BY materias.nombre, c.trimestre`,
-                [alumno_id],
-                (e, rows) => {
-                    if (!e && rows) resumen.calificaciones = rows;
-                    res.json(resumen);
-                }
-            );
         });
     });
 };

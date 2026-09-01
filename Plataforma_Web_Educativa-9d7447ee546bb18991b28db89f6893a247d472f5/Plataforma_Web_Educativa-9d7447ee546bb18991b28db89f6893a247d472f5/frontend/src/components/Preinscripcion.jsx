@@ -1,12 +1,10 @@
 import { API_URL } from '../config';
 import React, { useState } from 'react';
+import { NOMBRE_REGEX } from '../utils/validadores';
 
 // Validadores por campo. Devuelven '' si está OK o el mensaje de error.
 // Se usan tanto en vivo (onChange/onBlur) como en el submit, de modo que el
 // error de un campo aparece apenas se completa, sin necesidad de llenar todo.
-// Un nombre válido solo tiene letras (con acentos/ñ), espacios y signos básicos
-// de nombres (apóstrofo, punto, guion). No se aceptan números ni otros símbolos.
-const NOMBRE_REGEX = /^[\p{L}\s'’.-]+$/u;
 
 const validators = {
     alumno_nombre: (v) => {

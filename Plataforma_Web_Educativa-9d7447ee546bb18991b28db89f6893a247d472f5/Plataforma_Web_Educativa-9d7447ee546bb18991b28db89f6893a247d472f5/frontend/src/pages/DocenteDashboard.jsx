@@ -74,7 +74,7 @@ const DocenteDashboard = () => {
                 body: JSON.stringify({ actividad_id: parseInt(actividadSel), alumno_id: alumnoId, estado })
             });
             if (r.ok) alert('Asistencia registrada');
-            else { const d = await r.json().catch(() => ({})); alert(d.message || 'Error al registrar asistencia'); }
+            else { const errorBody = await r.json().catch(() => ({})); alert(errorBody.message || 'Error al registrar asistencia'); }
         } catch (err) { console.error(err); alert('Error de conexión'); }
     };
 
@@ -88,7 +88,7 @@ const DocenteDashboard = () => {
                 body: JSON.stringify({ actividad_id: parseInt(actividadSel), alumno_id: alumnoId, nota })
             });
             if (r.ok) { alert('Calificación guardada'); fetchInscriptos(actividadSel); }
-            else { const d = await r.json().catch(() => ({})); alert(d.message || 'Error al guardar la calificación'); }
+            else { const errorBody = await r.json().catch(() => ({})); alert(errorBody.message || 'Error al guardar la calificación'); }
         } catch (err) { console.error(err); alert('Error de conexión'); }
     };
 
@@ -248,7 +248,7 @@ const DocenteDashboard = () => {
                 body: JSON.stringify(data)
             });
             if (r.ok) { alert('Incidencia registrada'); setModal(null); }
-            else { const d = await r.json().catch(() => ({})); alert(d.message || 'Error al registrar incidencia'); }
+            else { const errorBody = await r.json().catch(() => ({})); alert(errorBody.message || 'Error al registrar incidencia'); }
         } catch (err) { console.error(err); alert('Error de conexión'); }
     };
 
@@ -267,7 +267,7 @@ const DocenteDashboard = () => {
                 body: JSON.stringify(data)
             });
             if (r.ok) { alert('Asistencia al comedor registrada'); setModal(null); }
-            else { const d = await r.json().catch(() => ({})); alert(d.message || 'Error al registrar'); }
+            else { const errorBody = await r.json().catch(() => ({})); alert(errorBody.message || 'Error al registrar'); }
         } catch (err) { console.error(err); alert('Error de conexión'); }
     };
 
@@ -289,7 +289,7 @@ const DocenteDashboard = () => {
                 body: JSON.stringify(data)
             });
             if (r.ok) { alert('Reserva realizada'); setModal(null); }
-            else { const d = await r.json().catch(() => ({})); alert(d.message || 'Error al reservar'); }
+            else { const errorBody = await r.json().catch(() => ({})); alert(errorBody.message || 'Error al reservar'); }
         } catch (err) { console.error(err); alert('Error de conexión'); }
     };
 

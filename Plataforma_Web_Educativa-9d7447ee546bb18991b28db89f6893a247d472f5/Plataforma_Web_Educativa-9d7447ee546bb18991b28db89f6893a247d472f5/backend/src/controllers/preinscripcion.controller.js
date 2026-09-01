@@ -1,4 +1,5 @@
 const db = require('../config/database');
+const { NOMBRE_REGEX } = require('../utils/validators');
 
 exports.create = (req, res) => {
     const { 
@@ -17,8 +18,6 @@ exports.create = (req, res) => {
         return res.status(400).json({ message: 'Todos los campos obligatorios deben ser completados' });
     }
     // Validaciones de formato y rango (no se aceptan negativos ni fuera de rango).
-    // Un nombre válido solo tiene letras, espacios y signos básicos (sin números ni símbolos).
-    const NOMBRE_REGEX = /^[\p{L}\s'’.-]+$/u;
     if (!NOMBRE_REGEX.test(String(alumno_nombre).trim())) {
         return res.status(400).json({ message: 'El nombre del alumno solo puede contener letras (sin números ni símbolos)' });
     }
