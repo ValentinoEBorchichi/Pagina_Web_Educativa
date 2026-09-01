@@ -1,0 +1,15 @@
+node_modules
+.env
+dist
+.vscode
+
+# Base de datos SQLite local
+backend/database/*.sqlite
+
+# Scripts temporales de depuración
+backend/_checkdb.js
+backend/_cleanup.js
+
+# Config local de Claude Code
+agt/
+.claude/settings.local.json

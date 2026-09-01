@@ -1,0 +1,13 @@
+{
+  "name": "plataforma-web-educativa",
+  "version": "1.0.0",
+  "description": "Plataforma Web Educativa - servicio único (Express sirve la API y el frontend compilado)",
+  "private": true,
+  "scripts": {
+    "build": "npm install --prefix frontend && npm run build --prefix frontend && npm install --prefix backend",
+    "start": "npm start --prefix backend"
+  },
+  "engines": {
+    "node": ">=20.19"
+  }
+}
