@@ -1,4 +1,5 @@
 const db = require('../config/database');
+const { manejarErrorSQL } = require('../utils/dbErrors');
 
 exports.getEstadisticasGenerales = (req, res) => {
     const stats = {
@@ -43,7 +44,7 @@ exports.getReporteAcademico = (req, res) => {
         ORDER BY a.apellido, a.nombre, materias.nombre, c.trimestre
     `;
     db.all(query, [], (err, rows) => {
-        if (err) return res.status(500).json({ message: err.message });
+        if (err) return manejarErrorSQL(res, err);
         res.json(rows);
     });
 };
@@ -60,7 +61,7 @@ exports.getReporteFinanciero = (req, res) => {
         ORDER BY p.fecha_pago DESC
     `;
     db.all(query, [], (err, rows) => {
-        if (err) return res.status(500).json({ message: err.message });
+        if (err) return manejarErrorSQL(res, err);
         res.json(rows);
     });
 };

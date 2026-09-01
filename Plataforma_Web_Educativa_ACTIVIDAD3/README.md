@@ -72,4 +72,11 @@ Para probar los diferentes roles y dashboards, utilice los siguientes usuarios:
 *   **Diseño Responsive:** Adaptado para una navegación fluida en móviles, tablets y PC.
 
 ---
+
+## 👥 Integrantes
+
+*   Valentino Borchichi
+*   Sebastián Flores
+
+---
 © 2026 Educar para Transformar. Todos los derechos reservados.

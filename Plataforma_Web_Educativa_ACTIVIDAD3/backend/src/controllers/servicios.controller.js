@@ -1,10 +1,11 @@
 const db = require('../config/database');
+const { manejarErrorSQL } = require('../utils/dbErrors');
 
 // --- COMEDOR ---
 exports.registrarAsistenciaComedor = (req, res) => {
     const { alumno_id, consumio_menu, observaciones } = req.body;
     db.run("INSERT INTO comedor_asistencias (alumno_id, consumio_menu, observaciones) VALUES (?, ?, ?)", [alumno_id, consumio_menu, observaciones], function(err) {
-        if (err) return res.status(500).json({ message: err.message });
+        if (err) return manejarErrorSQL(res, err);
         res.status(201).json({ id: this.lastID });
     });
 };
@@ -12,7 +13,7 @@ exports.registrarAsistenciaComedor = (req, res) => {
 // --- TRANSPORTE ---
 exports.getRutasTransporte = (req, res) => {
     db.all("SELECT * FROM transporte_rutas", [], (err, rows) => {
-        if (err) return res.status(500).json({ message: err.message });
+        if (err) return manejarErrorSQL(res, err);
         res.json(rows.map(r => ({
             id: r.id,
             nombre: r.nombre_ruta,
@@ -26,7 +27,7 @@ exports.createRutaTransporte = (req, res) => {
     const { nombre, chofer, capacidad } = req.body;
     db.run("INSERT INTO transporte_rutas (nombre_ruta, chofer_nombre, capacidad_max) VALUES (?, ?, ?)", 
         [nombre, chofer, capacidad], function(err) {
-            if (err) return res.status(500).json({ message: err.message });
+            if (err) return manejarErrorSQL(res, err);
             res.status(201).json({ id: this.lastID });
         }
     );
@@ -35,7 +36,7 @@ exports.createRutaTransporte = (req, res) => {
 exports.asignarAlumnoTransporte = (req, res) => {
     const { alumno_id, ruta_id, punto_encuentro } = req.body;
     db.run("INSERT INTO transporte_asignaciones (alumno_id, ruta_id, punto_encuentro) VALUES (?, ?, ?)", [alumno_id, ruta_id, punto_encuentro], function(err) {
-        if (err) return res.status(500).json({ message: err.message });
+        if (err) return manejarErrorSQL(res, err);
         res.status(201).json({ id: this.lastID });
     });
 };
@@ -43,7 +44,7 @@ exports.asignarAlumnoTransporte = (req, res) => {
 exports.deleteRutaTransporte = (req, res) => {
     const { id } = req.params;
     db.run("DELETE FROM transporte_rutas WHERE id = ?", [id], function(err) {
-        if (err) return res.status(500).json({ message: err.message });
+        if (err) return manejarErrorSQL(res, err);
         res.json({ message: "Ruta eliminada" });
     });
 };
@@ -51,7 +52,7 @@ exports.deleteRutaTransporte = (req, res) => {
 // --- INSTALACIONES ---
 exports.getInstalaciones = (req, res) => {
     db.all("SELECT * FROM instalaciones", [], (err, rows) => {
-        if (err) return res.status(500).json({ message: err.message });
+        if (err) return manejarErrorSQL(res, err);
         res.json(rows);
     });
 };
@@ -68,12 +69,12 @@ exports.reservarInstalacion = (req, res) => {
         )
     `;
     db.get(checkQuery, [instalacion_id, fecha, hora_fin, hora_inicio, hora_inicio, hora_fin], (err, row) => {
-        if (err) return res.status(500).json({ message: err.message });
+        if (err) return manejarErrorSQL(res, err);
         if (row.count > 0) return res.status(400).json({ message: "La instalación ya está reservada en ese horario." });
 
         db.run("INSERT INTO instalaciones_reservas (instalacion_id, fecha, hora_inicio, hora_fin, reservado_por, motivo) VALUES (?, ?, ?, ?, ?, ?)", 
             [instalacion_id, fecha, hora_inicio, hora_fin, reservado_por, motivo], function(err) {
-                if (err) return res.status(500).json({ message: err.message });
+                if (err) return manejarErrorSQL(res, err);
                 res.status(201).json({ id: this.lastID });
             }
         );
@@ -87,7 +88,7 @@ exports.registrarIncidenciaEnfermeria = (req, res) => {
 
     db.run("INSERT INTO enfermeria_incidencias (alumno_id, descripcion, accion_tomada, notificado_padre) VALUES (?, ?, ?, ?)", 
         [alumno_id, descripcion, accion_tomada, notificado_padre], function(err) {
-            if (err) return res.status(500).json({ message: err.message });
+            if (err) return manejarErrorSQL(res, err);
             res.status(201).json({ id: this.lastID });
         }
     );

@@ -3,6 +3,7 @@ const bcrypt = require('bcryptjs');
 const db = require('../config/database');
 require('dotenv').config();
 const { NOMBRE_REGEX } = require('../utils/validators');
+const { manejarErrorSQL } = require('../utils/dbErrors');
 
 // Política de complejidad de contraseña (solo para crear/registrar cuentas nuevas).
 // No afecta el login de cuentas ya existentes. Devuelve '' si es válida o el mensaje.
@@ -105,7 +106,7 @@ exports.getMe = (req, res) => {
 
 exports.getPadres = (req, res) => {
     db.all(`SELECT id, nombre, username FROM users WHERE rol = 'padre' ORDER BY nombre`, [], (err, rows) => {
-        if (err) return res.status(500).json({ message: err.message });
+        if (err) return manejarErrorSQL(res, err);
         res.json(rows);
     });
 };
@@ -115,7 +116,7 @@ const ROLES_VALIDOS = ['admin', 'docente', 'alumno', 'padre'];
 
 exports.getUsers = (req, res) => {
     db.all(`SELECT id, username, nombre, rol, created_at FROM users ORDER BY rol, nombre`, [], (err, rows) => {
-        if (err) return res.status(500).json({ message: err.message });
+        if (err) return manejarErrorSQL(res, err);
         res.json(rows);
     });
 };
@@ -169,7 +170,7 @@ exports.updateUserRol = (req, res) => {
         return res.status(400).json({ message: 'No podés cambiar tu propio rol de administrador' });
     }
     db.run(`UPDATE users SET rol = ? WHERE id = ?`, [rol, id], function(err) {
-        if (err) return res.status(500).json({ message: err.message });
+        if (err) return manejarErrorSQL(res, err);
         if (this.changes === 0) return res.status(404).json({ message: 'Usuario no encontrado' });
         res.json({ message: 'Rol actualizado correctamente' });
     });
@@ -181,7 +182,7 @@ exports.deleteUser = (req, res) => {
         return res.status(400).json({ message: 'No podés eliminar tu propia cuenta' });
     }
     db.run(`DELETE FROM users WHERE id = ?`, [id], function(err) {
-        if (err) return res.status(500).json({ message: err.message });
+        if (err) return manejarErrorSQL(res, err);
         if (this.changes === 0) return res.status(404).json({ message: 'Usuario no encontrado' });
         res.json({ message: 'Usuario eliminado correctamente' });
     });

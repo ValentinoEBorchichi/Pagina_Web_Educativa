@@ -1,11 +1,12 @@
 const db = require('../config/database');
 const PDFDocument = require('pdfkit');
 const { NOMBRE_REGEX } = require('../utils/validators');
+const { manejarErrorSQL } = require('../utils/dbErrors');
 
 // --- PERSONAL ---
 exports.getPersonal = (req, res) => {
     db.all("SELECT * FROM personal", [], (err, rows) => {
-        if (err) return res.status(500).json({ message: err.message });
+        if (err) return manejarErrorSQL(res, err);
         res.json(rows);
     });
 };
@@ -18,7 +19,7 @@ exports.createPersonal = (req, res) => {
     }
     if (!/^\d+$/.test(String(dni).trim())) return res.status(400).json({ message: "El DNI debe ser numérico (sin puntos ni letras)" });
     db.run("INSERT INTO personal (nombre, apellido, dni, tipo, email) VALUES (?, ?, ?, ?, ?)", [nombre, apellido, dni, tipo, email], function(err) {
-        if (err) return res.status(500).json({ message: err.message });
+        if (err) return manejarErrorSQL(res, err);
         res.status(201).json({ id: this.lastID });
     });
 };
@@ -36,7 +37,7 @@ exports.updatePersonal = (req, res) => {
         "UPDATE personal SET nombre = ?, apellido = ?, dni = ?, tipo = ?, email = ? WHERE id = ?",
         [nombre, apellido, dni, tipo, email, id],
         function(err) {
-            if (err) return res.status(500).json({ message: err.message });
+            if (err) return manejarErrorSQL(res, err);
             if (this.changes === 0) return res.status(404).json({ message: "Personal no encontrado" });
             res.json({ message: "Legajo de personal actualizado correctamente" });
         }
@@ -46,7 +47,7 @@ exports.updatePersonal = (req, res) => {
 exports.deletePersonal = (req, res) => {
     const { id } = req.params;
     db.run("DELETE FROM personal WHERE id = ?", [id], function(err) {
-        if (err) return res.status(500).json({ message: err.message });
+        if (err) return manejarErrorSQL(res, err);
         res.json({ message: "Personal eliminado" });
     });
 };
@@ -59,7 +60,7 @@ exports.getCuotasConfig = (req, res) => {
         JOIN niveles n ON cc.nivel_id = n.id
     `;
     db.all(query, [], (err, rows) => {
-        if (err) return res.status(500).json({ message: err.message });
+        if (err) return manejarErrorSQL(res, err);
         res.json(rows);
     });
 };
@@ -70,7 +71,7 @@ exports.createCuotaConfig = (req, res) => {
     if (isNaN(montoNum) || montoNum <= 0) return res.status(400).json({ message: "El monto debe ser un decimal mayor a 0" });
     
     db.run("INSERT INTO cuotas_config (nivel_id, monto, mes, anio, vencimiento) VALUES (?, ?, ?, ?, ?)", [nivel_id, montoNum, mes, anio, vencimiento], function(err) {
-        if (err) return res.status(500).json({ message: err.message });
+        if (err) return manejarErrorSQL(res, err);
         res.status(201).json({ id: this.lastID });
     });
 };
@@ -78,7 +79,7 @@ exports.createCuotaConfig = (req, res) => {
 exports.deleteCuotaConfig = (req, res) => {
     const { id } = req.params;
     db.run("DELETE FROM cuotas_config WHERE id = ?", [id], function(err) {
-        if (err) return res.status(500).json({ message: err.message });
+        if (err) return manejarErrorSQL(res, err);
         res.json({ message: "Configuración de cuota eliminada" });
     });
 };
@@ -146,7 +147,7 @@ exports.generarComprobante = (req, res) => {
         WHERE p.id = ?
     `;
     db.get(query, [pago_id], (err, pago) => {
-        if (err) return res.status(500).json({ message: err.message });
+        if (err) return manejarErrorSQL(res, err);
         if (!pago) return res.status(404).json({ message: "Pago no encontrado" });
 
         // Control de acceso para padres: solo comprobantes de sus hijos.
@@ -215,7 +216,7 @@ exports.generarComprobante = (req, res) => {
 exports.getSaldoAlumno = (req, res) => {
     const { alumno_id } = req.params;
     db.get("SELECT * FROM saldos_alumnos WHERE alumno_id = ?", [alumno_id], (err, row) => {
-        if (err) return res.status(500).json({ message: err.message });
+        if (err) return manejarErrorSQL(res, err);
         res.json(row || { saldo_pendiente: 0 });
     });
 };
@@ -235,7 +236,7 @@ exports.getPagos = (req, res) => {
     }
     query += ` ORDER BY p.fecha_pago DESC`;
     db.all(query, params, (err, rows) => {
-        if (err) return res.status(500).json({ message: err.message });
+        if (err) return manejarErrorSQL(res, err);
         res.json(rows);
     });
 };
@@ -250,7 +251,7 @@ exports.getDeudores = (req, res) => {
         ORDER BY s.saldo_pendiente DESC
     `;
     db.all(query, [], (err, rows) => {
-        if (err) return res.status(500).json({ message: err.message });
+        if (err) return manejarErrorSQL(res, err);
         res.json(rows);
     });
 };
