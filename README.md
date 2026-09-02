@@ -1,5 +1,5 @@
 # Educar para Transformar - Plataforma Institucional
-
+[![Codacy Badge](https://app.codacy.com/project/badge/Grade/54b20fe0140e4511bc659c56ee3fbe35)](https://app.codacy.com/gh/ValentinoEBorchichi/Pagina_Web_Educativa/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade)
 Sistema integral de gestión para el centro educativo "Educar para Transformar", desarrollado con una arquitectura moderna, modular y escalable.
 
 ## 🚀 Tecnologías Utilizadas
