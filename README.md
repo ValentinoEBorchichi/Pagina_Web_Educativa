@@ -156,7 +156,7 @@ Para restablecer el escenario a su estado inicial, se debe ejecutar nuevamente e
 
 ## Puesta en marcha del backend con SQL Server
 
-> **Estado actual:** los módulos de autenticación y de deportes (Sprint 1) operan sobre SQL Server. Los módulos restantes continúan sobre SQLite hasta completar su migración (véase *Sprint 1 → Convivencia con SQLite*).
+> **Estado actual:** los módulos de autenticación y de deportes (Sprint 1), así como los de padres, transporte y registro docente (Sprint 2), operan sobre SQL Server. Los módulos restantes continúan sobre SQLite hasta completar su migración (véase *Sprint 1 → Convivencia con SQLite*).
 
 **Requisitos:** Node.js 18 o superior, SQL Server 2016 o superior (ediciones Express o Developer) y `sqlcmd` o SQL Server Management Studio (SSMS).
 
@@ -306,6 +306,131 @@ Los módulos académico, de actividades, de comunicación, financiero, de preins
 *   **Alta de alumnos por parte del administrador:** el listado de padres devuelve actualmente identificadores de SQL Server.
 
 Por este motivo, dichos módulos constituyen los candidatos prioritarios para la migración a SQL Server. Todo código nuevo debe utilizar `src/config/db.js`.
+
+---
+
+## Sprint 2 — Padres, transporte y registro docente (Responsable: Sebastián Flores)
+
+**Alcance:** **RF-02** (vista de los hijos asociados a cada padre), **RF-09** (logística de transporte escolar obligatorio) y **RF-05** (registro docente y asignación a materias/cursos). La totalidad del código desarrollado en este sprint accede a SQL Server mediante el módulo `src/config/db.js` y protege sus rutas con el *middleware* `requireAuth` definido en `src/config/auth.js` (Sprint 1).
+
+### RF-02: vista de padres (`src/controllers/padres.controller.js`)
+
+El *endpoint* `GET /api/padres/mis-hijos` obtiene el identificador del padre **exclusivamente del token JWT** (`req.user.id`, correspondiente al `Usuarios.id` con rol `padre`) y nunca de parámetros provistos por el cliente. En consecuencia, la consulta se filtra por `Alumnos.padre_id` y resulta imposible solicitar los hijos de otro padre. La respuesta incorpora, para cada alumno, los datos de su curso y del recorrido de transporte asignado (si utiliza el servicio).
+
+### RF-09: logística de transporte (`src/controllers/transporte.controller.js`)
+
+El *endpoint* `POST /api/transporte/inscribir` asocia a un alumno con uno de los cuatro recorridos habilitados, registrando `Alumnos.transporte_id`. **La validación del recorrido es estricta:** el campo `numero_recorrido` debe corresponder exactamente a uno de los valores permitidos (1, 2, 3 o 4); en caso contrario, la solicitud se rechaza con HTTP **400** (`RECORRIDO_INVALIDO`), sin acceder a la base de datos. La restricción `CHECK` del esquema actúa como última línea de defensa. Adicionalmente, se verifica la capacidad del recorrido antes de confirmar la inscripción.
+
+### RF-05: registro docente (`src/controllers/profesores.controller.js`)
+
+Dos operaciones reservadas al administrador:
+*   `POST /api/profesores` da de alta el legajo docente (tabla `Profesores`) a partir de una cuenta de usuario existente. La clave foránea compuesta `(usuario_id, usuario_rol)` garantiza que la cuenta exista y posea rol `docente`; de lo contrario, la respuesta es **409** (`USUARIO_INVALIDO`).
+*   `POST /api/profesores/asignar` vincula al profesor con una materia y, opcionalmente, con un curso (tabla `Profesores_Materias`). El valor `curso_id` nulo habilita al profesor para la materia sin asignarle todavía un curso. Los índices únicos del esquema impiden asignaciones duplicadas y que, en un mismo curso, una materia sea dictada por más de un profesor (respuesta **409**, `YA_ASIGNADO`).
+
+### Endpoints
+
+| Método | Ruta | Roles | Descripción |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/api/padres/mis-hijos` | padre | Listado de los alumnos vinculados al padre autenticado, con su curso y recorrido de transporte. |
+| `POST` | `/api/transporte/inscribir` | admin, padre, alumno | Inscripción de un alumno en uno de los cuatro recorridos, con validación estricta del recorrido (RF-09). |
+| `POST` | `/api/profesores` | admin | Alta del legajo docente sobre una cuenta con rol `docente` (RF-05). |
+| `POST` | `/api/profesores/asignar` | admin | Asignación de un profesor a una materia y, opcionalmente, a un curso (RF-05). |
+
+### `GET /api/padres/mis-hijos`
+
+No requiere cuerpo. El identificador del padre se toma del token.
+
+**Respuesta exitosa (200):**
+```json
+{
+  "total": 1,
+  "hijos": [
+    {
+      "id": 5, "dni": "49111223", "nombre": "Benjamín", "apellido": "Fernández",
+      "fecha_nacimiento": "2014-03-20", "usa_comedor": false,
+      "curso": { "id": 3, "nivel": "Secundario", "grado": 1, "division": "A",
+                 "turno": "Mañana", "ciclo_lectivo": 2026 },
+      "transporte": null
+    }
+  ]
+}
+```
+
+### `POST /api/transporte/inscribir`
+
+**Cuerpo de la solicitud:** `{ "alumno_id": 5, "numero_recorrido": 1 }`
+*   **admin:** puede inscribir a cualquier alumno.
+*   **padre:** puede inscribir únicamente a sus hijos (RF-02).
+*   **alumno:** puede inscribirse únicamente a sí mismo; el campo `alumno_id` es opcional, ya que se utiliza el legajo vinculado a la cuenta.
+
+**Respuesta exitosa (201):**
+```json
+{
+  "message": "Inscripción al transporte confirmada: Benjamín en Recorrido Norte",
+  "inscripcion": { "alumno_id": 5, "transporte_id": 1, "numero_recorrido": 1,
+                   "recorrido": "Recorrido Norte" }
+}
+```
+
+**Respuestas de error** (estructura `{ "message": "...", "codigo": "..." }`):
+
+| HTTP | `codigo` | Condición |
+| :--- | :--- | :--- |
+| 400 | `RECORRIDO_INVALIDO` | `numero_recorrido` ausente o distinto de 1, 2, 3 o 4. La respuesta incluye el campo `recorridos_permitidos`. |
+| 400 | `DATOS_INVALIDOS` | Ausencia de `alumno_id`, o valor que no corresponde a un entero positivo (roles admin y padre). |
+| 401 | — | Solicitud sin token, o con un token vencido o inválido. |
+| 403 | — | El rol no posee permiso de inscripción (p. ej., docente). |
+| 403 | `SIN_PERMISO` / `SIN_LEGAJO` | Un padre intenta inscribir a un alumno que no es su hijo, un alumno intenta inscribir a otra persona, o la cuenta de alumno no se encuentra vinculada a un legajo. |
+| 404 | `ALUMNO_NO_ENCONTRADO` / `RECORRIDO_NO_ENCONTRADO` | El alumno o el recorrido indicado no existe. |
+| 409 | `YA_INSCRIPTO` / `SIN_CUPO` | El alumno ya viaja en ese recorrido, o el recorrido no dispone de cupo. |
+
+### `POST /api/profesores` y `POST /api/profesores/asignar`
+
+**Alta del legajo (`POST /api/profesores`):** `{ "usuario_id": 4, "dni": "20111222", "especialidad": "Educación Física", "telefono": "3624111111" }`. Los campos `especialidad` y `telefono` son opcionales; el DNI debe contener 7 u 8 dígitos numéricos.
+
+**Asignación (`POST /api/profesores/asignar`):** `{ "profesor_id": 1, "materia_id": 2, "curso_id": 3 }`. El campo `curso_id` es opcional (`null` habilita la materia sin curso).
+
+| HTTP | `codigo` | Condición |
+| :--- | :--- | :--- |
+| 400 | `DATOS_INVALIDOS` | Identificadores ausentes o no válidos, o DNI con formato incorrecto. |
+| 401 / 403 | — | Solicitud sin token válido, o realizada por un rol distinto de `admin`. |
+| 409 | `YA_EXISTE` | Ya existe un profesor con ese usuario o DNI. |
+| 409 | `USUARIO_INVALIDO` | La cuenta indicada no existe o no posee rol `docente`. |
+| 409 | `YA_ASIGNADO` | La asignación ya existe, o la materia ya está asignada a otro profesor en ese curso. |
+| 409 | `RELACION_INEXISTENTE` | El profesor, la materia o el curso indicado no existe. |
+
+### Guion de demostración (PowerShell)
+
+Con el servidor en ejecución (`npm run dev`) y la base de datos recién creada:
+
+```powershell
+$api = 'http://localhost:3000'
+
+function Entrar($usuario, $clave) {
+    $body = @{ username = $usuario; password = $clave } | ConvertTo-Json
+    (Invoke-RestMethod -Method Post -Uri "$api/api/auth/login" -ContentType 'application/json' -Body $body).token
+}
+
+# RF-02: el padre consulta a sus cinco hijos.
+$padre = Entrar 'padre' 'padre123'
+Invoke-RestMethod -Uri "$api/api/padres/mis-hijos" -Headers @{ Authorization = "Bearer $padre" }
+
+# RF-09: inscripción de Benjamín en el Recorrido Norte (201) y recorrido inválido (400).
+$body = @{ alumno_id = 5; numero_recorrido = 1 } | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri "$api/api/transporte/inscribir" -ContentType 'application/json' `
+    -Headers @{ Authorization = "Bearer $padre" } -Body $body
+try {
+    $malo = @{ alumno_id = 5; numero_recorrido = 9 } | ConvertTo-Json
+    Invoke-RestMethod -Method Post -Uri "$api/api/transporte/inscribir" -ContentType 'application/json' `
+        -Headers @{ Authorization = "Bearer $padre" } -Body $malo
+} catch { $_.ErrorDetails.Message }   # 400 RECORRIDO_INVALIDO
+
+# RF-05: el administrador asigna al profesor 2 (Jorge Pérez) la materia Ciencias Naturales en el curso 2.
+$admin = Entrar 'admin' 'admin123'
+$asig = @{ profesor_id = 2; materia_id = 3; curso_id = 2 } | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri "$api/api/profesores/asignar" -ContentType 'application/json' `
+    -Headers @{ Authorization = "Bearer $admin" } -Body $asig
+```
 
 ---
 
