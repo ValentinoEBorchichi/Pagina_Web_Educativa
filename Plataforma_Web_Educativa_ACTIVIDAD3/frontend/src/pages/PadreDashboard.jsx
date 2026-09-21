@@ -13,8 +13,12 @@ const PadreDashboard = () => {
     const [disponibles, setDisponibles] = useState([]);
     const [alumnoSel, setAlumnoSel] = useState('');
     const [pagos, setPagos] = useState([]);
+    const [deportes, setDeportes] = useState([]);
+    const [deporteSel, setDeporteSel] = useState({});   // { [hijoId]: deporteId }
+    const [msgDeporte, setMsgDeporte] = useState(null); // { tipo: 'error' | 'ok', texto }
 
     useEffect(() => {
+        fetchDeportes();
         fetchNotificaciones();
         fetchHijosYSaldos();
         fetchDisponibles();
@@ -50,6 +54,45 @@ const PadreDashboard = () => {
         } catch (error) {
             console.error(error);
             alert('Error al descargar el comprobante');
+        }
+    };
+
+    const fetchDeportes = async () => {
+        try {
+            const response = await apiFetch(`${API_URL}/api/deportes`);
+            if (response.ok) setDeportes(await response.json());
+        } catch (error) {
+            console.error(error);
+        }
+    };
+
+    // Inscribe a un hijo en un deporte (RF-06 / RF-07). El JWT lo adjunta apiFetch.
+    const inscribirHijo = async (hijo) => {
+        const deporteId = deporteSel[hijo.id];
+        if (!deporteId) {
+            setMsgDeporte({ tipo: 'error', texto: `Elegí un deporte para ${hijo.nombre}.` });
+            return;
+        }
+        setMsgDeporte(null);
+        try {
+            const response = await apiFetch(`${API_URL}/api/deportes/inscribir`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ alumno_id: hijo.id, deporte_id: Number(deporteId) })
+            });
+            const data = await response.json().catch(() => ({}));
+            if (response.ok) {
+                setMsgDeporte({ tipo: 'ok', texto: data.message || 'Inscripción confirmada.' });
+                setDeporteSel((prev) => ({ ...prev, [hijo.id]: '' }));
+                fetchDeportes(); // refresca cupos
+            } else if (response.status === 409) {
+                // Límite de 2 deportes, horarios superpuestos, sin cupo o ya inscripto.
+                setMsgDeporte({ tipo: 'error', texto: data.message || 'La inscripción entra en conflicto con los deportes actuales.' });
+            } else if (response.status !== 401) {
+                setMsgDeporte({ tipo: 'error', texto: data.message || 'No se pudo inscribir.' });
+            }
+        } catch {
+            setMsgDeporte({ tipo: 'error', texto: 'Error de conexión con el servidor' });
         }
     };
 
@@ -112,9 +155,15 @@ const PadreDashboard = () => {
 
     const fetchHijosYSaldos = async () => {
         try {
-            const response = await apiFetch(`${API_URL}/api/academico/mis-hijos`);
+            const response = await apiFetch(`${API_URL}/api/padres/mis-hijos`);
             if (!response.ok) return;
-            const lista = await response.json();
+            const { hijos } = await response.json();
+            // Se conserva el formato que usa la vista (nivel_nombre / division) a partir del curso.
+            const lista = hijos.map((h) => ({
+                ...h,
+                nivel_nombre: h.curso ? `${h.curso.nivel} ${h.curso.grado}°` : null,
+                division: h.curso ? h.curso.division : null
+            }));
             const saldos = await Promise.all(lista.map(async (h) => {
                 // Saldo + resumen académico real (promedio, asistencia, faltas) en paralelo.
                 const [rs, rr] = await Promise.all([
@@ -334,6 +383,49 @@ const PadreDashboard = () => {
                                     className="btn btn-violet"
                                     style={{ width: '100%', marginTop: '12px', fontSize: '0.8rem' }}
                                 >Ver Reporte Completo</button>
+                            </div>
+                        ))
+                    )}
+                </div>
+
+                {/* Inscripción a deportes de los hijos */}
+                <div style={cardStyle}>
+                    <h3 style={cardTitleStyle}>⚽ Deportes de mis hijos</h3>
+                    {msgDeporte && (
+                        <div role="alert" style={{
+                            marginTop: '16px', padding: '14px', borderRadius: '12px', fontSize: '0.9rem', fontWeight: 700,
+                            background: msgDeporte.tipo === 'ok' ? '#dcfce7' : '#fee2e2',
+                            color: msgDeporte.tipo === 'ok' ? '#166534' : '#dc2626',
+                            border: `1px solid ${msgDeporte.tipo === 'ok' ? '#bbf7d0' : '#fecaca'}`
+                        }}>
+                            {msgDeporte.texto}
+                        </div>
+                    )}
+                    {hijosReales.length === 0 ? (
+                        <p style={{ fontSize: '0.85rem', color: '#64748b', marginTop: '16px' }}>
+                            No tenés hijos vinculados para inscribir.
+                        </p>
+                    ) : (
+                        hijosReales.map(h => (
+                            <div key={h.id} style={{ marginTop: '16px', padding: '12px', background: '#f8fafc', borderRadius: '10px' }}>
+                                <p style={{ fontWeight: 800, color: 'var(--blue)' }}>{h.apellido}, {h.nombre}</p>
+                                <div style={{ display: 'flex', gap: '10px', marginTop: '8px' }}>
+                                    <select
+                                        value={deporteSel[h.id] || ''}
+                                        onChange={(e) => setDeporteSel((prev) => ({ ...prev, [h.id]: e.target.value }))}
+                                        style={{ flex: 1, minWidth: 0, padding: '10px 8px', borderRadius: '8px', border: '2px solid #e2e8f0', fontSize: '0.8rem' }}
+                                    >
+                                        <option value="">Seleccionar deporte...</option>
+                                        {deportes.map(d => (
+                                            <option key={d.id} value={d.id} disabled={d.inscriptos >= d.cupo_maximo}>
+                                                {d.nombre} — {d.horario} ({d.inscriptos}/{d.cupo_maximo})
+                                            </option>
+                                        ))}
+                                    </select>
+                                    <button onClick={() => inscribirHijo(h)} className="btn btn-violet" style={{ fontSize: '0.85rem', whiteSpace: 'nowrap' }}>
+                                        Inscribir
+                                    </button>
+                                </div>
                             </div>
                         ))
                     )}
