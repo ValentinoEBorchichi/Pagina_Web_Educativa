@@ -158,3 +158,38 @@ exports.inscribir = async (req, res) => {
         manejarErrorMssql(res, err);
     }
 };
+
+// GET /api/deportes
+// Deportes activos con su horario y cupo. "horario" ya viene en texto legible.
+exports.listar = async (req, res) => {
+    try {
+        const pool = await getPool();
+        const { recordset } = await pool.request()
+            .query(`SELECT ${COLUMNAS_DEPORTE}, d.cupo_maximo,
+                           (SELECT COUNT(*) FROM Inscripciones_Deportes i WHERE i.deporte_id = d.id) AS inscriptos
+                    FROM Deportes d WHERE d.activo = 1
+                    ORDER BY d.nombre, d.hora_inicio`);
+        res.json(recordset.map((d) => ({ ...d, horario: horarioATexto(d) })));
+    } catch (err) {
+        manejarErrorMssql(res, err);
+    }
+};
+
+// GET /api/deportes/mis-inscripciones
+// Deportes a los que está inscripto el alumno del JWT (Alumnos.usuario_id).
+exports.misInscripciones = async (req, res) => {
+    try {
+        const pool = await getPool();
+        const { recordset } = await pool.request()
+            .input('usuario', sql.Int, req.user.id)
+            .query(`SELECT ${COLUMNAS_DEPORTE}, i.fecha_inscripcion
+                    FROM Alumnos a
+                    JOIN Inscripciones_Deportes i ON i.alumno_id = a.id
+                    JOIN Deportes d ON d.id = i.deporte_id
+                    WHERE a.usuario_id = @usuario
+                    ORDER BY d.nombre`);
+        res.json(recordset.map((d) => ({ ...d, horario: horarioATexto(d) })));
+    } catch (err) {
+        manejarErrorMssql(res, err);
+    }
+};

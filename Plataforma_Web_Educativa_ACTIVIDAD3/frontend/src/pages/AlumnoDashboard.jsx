@@ -8,6 +8,9 @@ const AlumnoDashboard = () => {
     const [notificaciones, setNotificaciones] = useState([]);
     const [actividades, setActividades] = useState([]);
     const [misInscripciones, setMisInscripciones] = useState([]);
+    const [deportes, setDeportes] = useState([]);
+    const [misDeportes, setMisDeportes] = useState([]);
+    const [errorInscripcion, setErrorInscripcion] = useState('');
 
     const materias = [
         { nombre: 'Matemáticas', docente: 'Prof. Gómez', nota: '9' },
@@ -37,28 +40,68 @@ const AlumnoDashboard = () => {
 
     const fetchActividades = async () => {
         try {
-            const [resAct, resMis] = await Promise.all([
+            const [resAct, resMis, resDep, resMisDep] = await Promise.all([
                 apiFetch(`${API_URL}/api/academico/actividades`),
-                apiFetch(`${API_URL}/api/academico/mis-inscripciones`)
+                apiFetch(`${API_URL}/api/academico/mis-inscripciones`),
+                apiFetch(`${API_URL}/api/deportes`),
+                apiFetch(`${API_URL}/api/deportes/mis-inscripciones`)
             ]);
             if (resAct.ok) setActividades(await resAct.json());
             if (resMis.ok) setMisInscripciones(await resMis.json());
+            if (resDep.ok) setDeportes(await resDep.json());
+            if (resMisDep.ok) setMisDeportes(await resMisDep.json());
         } catch (error) {
             console.error('Error al cargar actividades:', error);
         }
     };
 
-    const estaInscripto = (actividadId) => misInscripciones.some(a => a.id === actividadId);
+    // Los deportes salen de /api/deportes (SQL Server); el resto de las actividades, del endpoint académico.
+    const items = [
+        ...deportes.map(d => ({ ...d, tipo: 'Deporte', cupo_max: d.cupo_maximo })),
+        ...actividades.filter(a => a.tipo !== 'Deporte')
+    ];
 
-    const inscribirse = async (actividadId) => {
-        const response = await apiFetch(`${API_URL}/api/academico/inscribir-actividad`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ actividad_id: actividadId })
-        });
-        const data = await response.json();
-        if (response.ok) fetchActividades();
-        else alert(data.message || 'No te pudiste inscribir.');
+    const estaInscripto = (item) => item.tipo === 'Deporte'
+        ? misDeportes.some(d => d.id === item.id)
+        : misInscripciones.some(a => a.id === item.id);
+
+    // Los deportes se inscriben por /api/deportes/inscribir (RF-06 y RF-07);
+    // el resto de las actividades sigue usando el endpoint académico.
+    const inscribirse = async (actividad) => {
+        const esDeporte = actividad.tipo === 'Deporte';
+        const url = esDeporte
+            ? `${API_URL}/api/deportes/inscribir`
+            : `${API_URL}/api/academico/inscribir-actividad`;
+        const body = esDeporte
+            ? { deporte_id: actividad.id }
+            : { actividad_id: actividad.id };
+
+        setErrorInscripcion('');
+        try {
+            // apiFetch adjunta Authorization: Bearer <token> tomado de localStorage.
+            const response = await apiFetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            const data = await response.json().catch(() => ({}));
+            if (response.ok) {
+                fetchActividades();
+            } else if (response.status === 409) {
+                // Conflicto de reglas de negocio: máx. 2 deportes, horario superpuesto o sin cupo.
+                const mensaje = data.message || 'La inscripción entra en conflicto con tus deportes actuales.';
+                setErrorInscripcion(mensaje);
+                alert(mensaje);
+            } else if (response.status !== 401) {
+                const mensaje = data.message || 'No te pudiste inscribir.';
+                setErrorInscripcion(mensaje);
+                alert(mensaje);
+            }
+        } catch {
+            const mensaje = 'Error de conexión con el servidor';
+            setErrorInscripcion(mensaje);
+            alert(mensaje);
+        }
     };
 
     const cancelarInscripcion = async (actividadId) => {
@@ -103,27 +146,36 @@ const AlumnoDashboard = () => {
                 {/* Actividades Extracurriculares */}
                 <div className="dashboard-card" style={{ ...cardStyle, gridColumn: '1 / -1' }}>
                     <h3 style={cardTitleStyle}>🎭 Actividades Extracurriculares</h3>
+                    {errorInscripcion && (
+                        <div role="alert" style={{ background: '#fee2e2', color: '#dc2626', padding: '14px', borderRadius: '12px', marginTop: '16px', fontSize: '0.9rem', fontWeight: 700, border: '1px solid #fecaca' }}>
+                            {errorInscripcion}
+                        </div>
+                    )}
                     <div style={{ marginTop: '16px', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '16px' }}>
-                        {actividades.length === 0 ? (
+                        {items.length === 0 ? (
                             <p style={{ fontSize: '0.9rem', color: '#64748b' }}>No hay actividades disponibles por el momento.</p>
                         ) : (
-                            actividades.map(a => {
-                                const inscripto = estaInscripto(a.id);
+                            items.map(a => {
+                                const inscripto = estaInscripto(a);
                                 const lleno = a.inscriptos >= a.cupo_max;
                                 return (
-                                    <div key={a.id} style={{ padding: '16px', background: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                                    <div key={`${a.tipo}-${a.id}`} style={{ padding: '16px', background: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
                                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                             <span style={{ fontSize: '0.65rem', textTransform: 'uppercase', fontWeight: 800, color: 'white', background: a.tipo === 'Deporte' ? 'var(--green)' : a.tipo === 'Cultura' ? 'var(--violet)' : 'var(--orange)', padding: '3px 8px', borderRadius: '6px' }}>{a.tipo}</span>
                                             <span style={{ fontSize: '0.75rem', fontWeight: 700, color: lleno ? '#dc2626' : '#64748b' }}>{a.inscriptos}/{a.cupo_max}</span>
                                         </div>
                                         <p style={{ fontWeight: 800, fontSize: '1rem', color: 'var(--text)', marginTop: '10px' }}>{a.nombre}</p>
                                         <p style={{ fontSize: '0.8rem', color: 'var(--text-sm)', marginBottom: '12px' }}>{a.horario || 'Horario a confirmar'}</p>
-                                        {inscripto ? (
+                                        {inscripto && a.tipo === 'Deporte' ? (
+                                            <button disabled className="btn btn-hero-outline" style={{ width: '100%', fontSize: '0.8rem', color: 'var(--green)', borderColor: 'var(--green)', cursor: 'default' }}>
+                                                ✓ Inscripto
+                                            </button>
+                                        ) : inscripto ? (
                                             <button onClick={() => cancelarInscripcion(a.id)} className="btn btn-hero-outline" style={{ width: '100%', fontSize: '0.8rem', color: '#dc2626', borderColor: '#dc2626' }}>
                                                 ✓ Inscripto — Cancelar
                                             </button>
                                         ) : (
-                                            <button onClick={() => inscribirse(a.id)} disabled={lleno} className="btn btn-violet" style={{ width: '100%', fontSize: '0.8rem', opacity: lleno ? 0.5 : 1, cursor: lleno ? 'not-allowed' : 'pointer' }}>
+                                            <button onClick={() => inscribirse(a)} disabled={lleno} className="btn btn-violet" style={{ width: '100%', fontSize: '0.8rem', opacity: lleno ? 0.5 : 1, cursor: lleno ? 'not-allowed' : 'pointer' }}>
                                                 {lleno ? 'Sin cupo' : 'Inscribirme'}
                                             </button>
                                         )}
