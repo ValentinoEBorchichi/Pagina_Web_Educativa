@@ -231,11 +231,11 @@ nav a.active { color: var(--blue); background: #dbeafe; border-bottom: 2px solid
 .quick-card {
   display: flex; align-items: center; gap: 18px;
   padding: 28px 32px;
-  border-right: 1px solid #e2e8f0;
+  border: 1px solid #e5e7eb;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.05);
   cursor: pointer;
   transition: background .2s;
 }
-.quick-card:last-child { border-right: none; }
 .quick-card:hover { background: #f8fafc; }
 .quick-icon {
   width: 54px; height: 54px; border-radius: 14px;
@@ -245,8 +245,24 @@ nav a.active { color: var(--blue); background: #dbeafe; border-bottom: 2px solid
 .qi-green  { background: #dcfce7; }
 .qi-blue   { background: #dbeafe; }
 .qi-orange { background: #fff7ed; }
-.quick-card h3 { font-size: 1rem; font-weight: 800; color: var(--text); }
-.quick-card p  { font-size: .83rem; color: var(--text-sm); margin-top: 2px; }
+/* Tipografía de las tarjetas de acceso rápido: sans-serif limpia y de alto contraste. */
+.quick-card {
+  font-family: system-ui, -apple-system, 'Segoe UI', Inter, Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+.quick-card h3 {
+  font-family: inherit;
+  font-size: 1.1rem;
+  font-weight: 700;
+  line-height: 1.3;
+  color: #1f2937;
+}
+.quick-card p {
+  font-size: .9rem;
+  font-weight: 500;
+  line-height: 1.5;
+  color: #1f2937;
+  margin-top: 4px;
+}
 
 /* ─────────────────────────────────────────
    NUESTRA INSTITUCIÓN
@@ -492,8 +508,6 @@ footer {
   .topbar-btns { gap: 8px; }
   .topbar-btns .btn { font-size: .8rem; padding: 8px 16px; }
   .quick-grid { grid-template-columns: 1fr; }
-  .quick-card { border-right: none; border-bottom: 1px solid #e2e8f0; }
-  .quick-card:last-child { border-bottom: none; }
   .inst-cards, .servicios-grid, .niveles-grid, .noticias-grid { grid-template-columns: repeat(2, 1fr); }
   .footer-grid { grid-template-columns: 1fr 1fr; }
 /* ─────────────────────────────────────────
