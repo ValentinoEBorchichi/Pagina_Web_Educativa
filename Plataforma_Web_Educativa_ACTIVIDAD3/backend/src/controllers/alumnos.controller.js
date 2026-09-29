@@ -1,6 +1,7 @@
 const db = require('../config/database');
+const { sql, getPool } = require('../config/db');
 const { NOMBRE_REGEX } = require('../utils/validators');
-const { manejarErrorSQL } = require('../utils/dbErrors');
+const { manejarErrorSQL, manejarErrorMssql } = require('../utils/dbErrors');
 
 // Controlador de alumnos: legajos (alta/edición), resumen académico para
 // el rol padre y vinculación de hijos a la cuenta del padre. Se separó de
@@ -97,65 +98,70 @@ exports.getMisHijos = (req, res) => {
 };
 
 // Cada una de estas tres funciones resuelve una sola pregunta sobre el alumno
-// (promedio, asistencia o listado de notas). getResumenHijo antes hacía las
-// cuatro cosas —verificar acceso, calcular promedio, calcular asistencia y
-// listar calificaciones— en un único callback anidado; separarlas permite
-// leer y probar cada cálculo de forma independiente.
-function calcularPromedio(alumno_id, callback) {
-    db.get("SELECT AVG(nota) AS prom FROM calificaciones WHERE alumno_id = ?", [alumno_id], (err, row) => {
-        const promedio = (!err && row && row.prom != null) ? Math.round(row.prom * 100) / 100 : null;
-        callback(promedio);
-    });
+// (promedio, asistencia o listado de notas), sobre SQL Server.
+async function calcularPromedio(pool, alumno_id) {
+    const { recordset } = await pool.request()
+        .input('alumno', sql.Int, alumno_id)
+        .query('SELECT AVG(CAST(nota AS DECIMAL(4,2))) AS prom FROM dbo.Calificaciones WHERE alumno_id = @alumno');
+    const prom = recordset[0] && recordset[0].prom;
+    return prom != null ? Math.round(prom * 100) / 100 : null;
 }
 
-function calcularAsistencia(alumno_id, callback) {
-    const query = `
-        SELECT COUNT(*) AS total,
-               SUM(CASE WHEN estado = 'Presente' THEN 1 ELSE 0 END) AS presentes,
-               SUM(CASE WHEN estado = 'Ausente' THEN 1 ELSE 0 END) AS faltas
-        FROM asistencias WHERE alumno_id = ?
-    `;
-    db.get(query, [alumno_id], (err, row) => {
-        if (err || !row) return callback({ total_clases: 0, presentes: 0, faltas: 0, asistencia_pct: null });
-        callback({
-            total_clases: row.total || 0,
-            presentes: row.presentes || 0,
-            faltas: row.faltas || 0,
-            asistencia_pct: row.total ? Math.round((row.presentes / row.total) * 100) : null
-        });
-    });
+async function calcularAsistencia(pool, alumno_id) {
+    const { recordset } = await pool.request()
+        .input('alumno', sql.Int, alumno_id)
+        .query(`SELECT COUNT(*) AS total,
+                       SUM(CASE WHEN estado = 'Presente' THEN 1 ELSE 0 END) AS presentes,
+                       SUM(CASE WHEN estado = 'Ausente' THEN 1 ELSE 0 END) AS faltas
+                FROM dbo.Asistencias WHERE alumno_id = @alumno`);
+    const row = recordset[0] || {};
+    const total = row.total || 0;
+    const presentes = row.presentes || 0;
+    return {
+        total_clases: total,
+        presentes,
+        faltas: row.faltas || 0,
+        asistencia_pct: total ? Math.round((presentes / total) * 100) : null
+    };
 }
 
-function obtenerCalificacionesAlumno(alumno_id, callback) {
-    const query = `
-        SELECT materias.nombre AS materia_nombre, c.nota, c.trimestre
-        FROM calificaciones c
-        LEFT JOIN materias ON c.materia_id = materias.id
-        WHERE c.alumno_id = ?
-        ORDER BY materias.nombre, c.trimestre
-    `;
-    db.all(query, [alumno_id], (err, rows) => callback(!err && rows ? rows : []));
+async function obtenerCalificacionesAlumno(pool, alumno_id) {
+    const { recordset } = await pool.request()
+        .input('alumno', sql.Int, alumno_id)
+        .query(`SELECT m.nombre AS materia_nombre, c.nota, c.trimestre
+                FROM dbo.Calificaciones c
+                LEFT JOIN dbo.Materias m ON c.materia_id = m.id
+                WHERE c.alumno_id = @alumno
+                ORDER BY m.nombre, c.trimestre`);
+    return recordset;
 }
 
 // Resumen académico de un hijo (rol padre, solo lectura): promedio, asistencia
-// y faltas reales calculados desde calificaciones y asistencias. Restringido a
-// los alumnos cuyo tutor_id sea el padre logueado.
-exports.getResumenHijo = (req, res) => {
+// y faltas reales calculados desde Calificaciones y Asistencias (SQL Server).
+// Restringido a los alumnos cuyo padre_id sea el padre logueado.
+exports.getResumenHijo = async (req, res) => {
     const alumno_id = parseInt(req.params.alumno_id);
     if (!alumno_id) return res.status(400).json({ message: "Alumno inválido" });
 
-    db.get("SELECT id FROM alumnos WHERE id = ? AND tutor_id = ?", [alumno_id, req.user.id], (err, alumno) => {
-        if (err) return manejarErrorSQL(res, err);
-        if (!alumno) return res.status(403).json({ message: "No tenés acceso a este alumno" });
+    try {
+        const pool = await getPool();
+        const { recordset } = await pool.request()
+            .input('alumno', sql.Int, alumno_id)
+            .input('padre', sql.Int, req.user.id)
+            .query('SELECT id FROM dbo.Alumnos WHERE id = @alumno AND padre_id = @padre');
 
-        calcularPromedio(alumno_id, (promedio) => {
-            calcularAsistencia(alumno_id, (asistencia) => {
-                obtenerCalificacionesAlumno(alumno_id, (calificaciones) => {
-                    res.json({ promedio, ...asistencia, calificaciones });
-                });
-            });
-        });
-    });
+        if (!recordset[0]) return res.status(403).json({ message: "No tenés acceso a este alumno" });
+
+        const [promedio, asistencia, calificaciones] = await Promise.all([
+            calcularPromedio(pool, alumno_id),
+            calcularAsistencia(pool, alumno_id),
+            obtenerCalificacionesAlumno(pool, alumno_id)
+        ]);
+
+        res.json({ promedio, ...asistencia, calificaciones });
+    } catch (err) {
+        manejarErrorMssql(res, err);
+    }
 };
 
 

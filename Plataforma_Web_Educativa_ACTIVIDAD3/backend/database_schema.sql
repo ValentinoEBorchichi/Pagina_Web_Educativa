@@ -34,6 +34,9 @@ GO
 
 -- Limpieza en orden inverso a las dependencias (los triggers se borran con su tabla).
 DROP TABLE IF EXISTS dbo.Inscripciones_Deportes;
+DROP TABLE IF EXISTS dbo.Saldos;
+DROP TABLE IF EXISTS dbo.Calificaciones;
+DROP TABLE IF EXISTS dbo.Asistencias;
 DROP TABLE IF EXISTS dbo.Alumnos;
 DROP TABLE IF EXISTS dbo.Deportes;
 DROP TABLE IF EXISTS dbo.Profesores_Materias;
@@ -301,6 +304,64 @@ CREATE TABLE dbo.Inscripciones_Deportes (
 );
 
 CREATE INDEX IX_Inscripciones_Deportes_deporte_id ON dbo.Inscripciones_Deportes (deporte_id);
+GO
+
+
+/* -----------------------------------------------------------------------------
+   Saldos: estado de cuenta financiera del alumno (un registro por alumno).
+   saldo_pendiente > 0 indica deuda; se actualiza al registrar un pago.
+   ----------------------------------------------------------------------------- */
+CREATE TABLE dbo.Saldos (
+    alumno_id             INT             NOT NULL,
+    saldo_pendiente       DECIMAL(10,2)   NOT NULL CONSTRAINT DF_Saldos_saldo_pendiente DEFAULT (0),
+    ultima_actualizacion  DATETIME2(0)    NOT NULL CONSTRAINT DF_Saldos_ultima_actualizacion DEFAULT (SYSUTCDATETIME()),  -- UTC
+
+    CONSTRAINT PK_Saldos PRIMARY KEY (alumno_id),
+    CONSTRAINT FK_Saldos_Alumnos FOREIGN KEY (alumno_id)
+        REFERENCES dbo.Alumnos (id) ON DELETE CASCADE
+);
+GO
+
+
+/* -----------------------------------------------------------------------------
+   Calificaciones: notas del alumno por materia y trimestre (1 a 10).
+   ----------------------------------------------------------------------------- */
+CREATE TABLE dbo.Calificaciones (
+    id          INT IDENTITY(1,1) NOT NULL,
+    alumno_id   INT               NOT NULL,
+    materia_id  INT               NOT NULL,
+    nota        TINYINT           NOT NULL,
+    trimestre   TINYINT           NOT NULL,
+
+    CONSTRAINT PK_Calificaciones PRIMARY KEY (id),
+    CONSTRAINT CK_Calificaciones_nota CHECK (nota BETWEEN 1 AND 10),
+    CONSTRAINT CK_Calificaciones_trimestre CHECK (trimestre BETWEEN 1 AND 3),
+    CONSTRAINT FK_Calificaciones_Alumnos FOREIGN KEY (alumno_id)
+        REFERENCES dbo.Alumnos (id) ON DELETE CASCADE,
+    CONSTRAINT FK_Calificaciones_Materias FOREIGN KEY (materia_id)
+        REFERENCES dbo.Materias (id)
+);
+
+CREATE INDEX IX_Calificaciones_alumno_id ON dbo.Calificaciones (alumno_id);
+GO
+
+
+/* -----------------------------------------------------------------------------
+   Asistencias: presentismo diario del alumno.
+   ----------------------------------------------------------------------------- */
+CREATE TABLE dbo.Asistencias (
+    id         INT IDENTITY(1,1) NOT NULL,
+    alumno_id  INT               NOT NULL,
+    fecha      DATE              NOT NULL CONSTRAINT DF_Asistencias_fecha DEFAULT (CAST(SYSDATETIME() AS DATE)),
+    estado     VARCHAR(10)       NOT NULL,
+
+    CONSTRAINT PK_Asistencias PRIMARY KEY (id),
+    CONSTRAINT CK_Asistencias_estado CHECK (estado IN ('Presente', 'Ausente', 'Tarde')),
+    CONSTRAINT FK_Asistencias_Alumnos FOREIGN KEY (alumno_id)
+        REFERENCES dbo.Alumnos (id) ON DELETE CASCADE
+);
+
+CREATE INDEX IX_Asistencias_alumno_id ON dbo.Asistencias (alumno_id);
 GO
 
 

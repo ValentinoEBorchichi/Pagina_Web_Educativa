@@ -1,7 +1,8 @@
 const db = require('../config/database');
+const { sql, getPool } = require('../config/db');
 const PDFDocument = require('pdfkit');
 const { NOMBRE_REGEX } = require('../utils/validators');
-const { manejarErrorSQL } = require('../utils/dbErrors');
+const { manejarErrorSQL, manejarErrorMssql } = require('../utils/dbErrors');
 
 // --- PERSONAL ---
 exports.getPersonal = (req, res) => {
@@ -213,12 +214,19 @@ exports.generarComprobante = (req, res) => {
     });
 };
 
-exports.getSaldoAlumno = (req, res) => {
-    const { alumno_id } = req.params;
-    db.get("SELECT * FROM saldos_alumnos WHERE alumno_id = ?", [alumno_id], (err, row) => {
-        if (err) return manejarErrorSQL(res, err);
-        res.json(row || { saldo_pendiente: 0 });
-    });
+exports.getSaldoAlumno = async (req, res) => {
+    const alumno_id = parseInt(req.params.alumno_id);
+    if (!alumno_id) return res.status(400).json({ message: "Alumno inválido" });
+
+    try {
+        const pool = await getPool();
+        const { recordset } = await pool.request()
+            .input('alumno', sql.Int, alumno_id)
+            .query('SELECT alumno_id, saldo_pendiente, ultima_actualizacion FROM dbo.Saldos WHERE alumno_id = @alumno');
+        res.json(recordset[0] || { alumno_id, saldo_pendiente: 0 });
+    } catch (err) {
+        manejarErrorMssql(res, err);
+    }
 };
 
 // Lista de pagos registrados. Admin ve todos; un padre solo los de sus hijos.
