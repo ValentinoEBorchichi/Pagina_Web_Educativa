@@ -11,6 +11,9 @@ const AdminDashboard = () => {
     const [cursos, setCursos] = useState([]);
     const [aulas, setAulas] = useState([]);
     const [showAlumnoForm, setShowAlumnoForm] = useState(false);
+    const [cursosMssql, setCursosMssql] = useState([]);
+    const [padres, setPadres] = useState([]);
+    const [msgAlumno, setMsgAlumno] = useState(null);
     const [loading, setLoading] = useState(true);
     const { apiFetch } = useAuth();
 
@@ -35,7 +38,7 @@ const AdminDashboard = () => {
 
     useEffect(() => {
         if (activeTab === 'preinscripciones') fetchPreinscripciones();
-        if (activeTab === 'alumnos') { fetchAlumnos(); fetchCursosYAulas(); }
+        if (activeTab === 'alumnos') { fetchAlumnos(); fetchCursosYAulas(); fetchCursosMssql(); fetchPadres(); }
         if (activeTab === 'academico') {
             fetchCursosYAulas(); fetchNiveles(); fetchMaterias();
             fetchActividades(); fetchHorarios(); fetchDocentes();
@@ -539,42 +542,65 @@ const AdminDashboard = () => {
         }
     };
 
+    const fetchCursosMssql = async () => {
+        try {
+            const response = await apiFetch(`${API_URL}/api/academico/cursos-mssql`);
+            if (response.ok) setCursosMssql(await response.json());
+        } catch (error) {
+            console.error('Error cursos:', error);
+        }
+    };
+
+    const fetchPadres = async () => {
+        try {
+            const response = await apiFetch(`${API_URL}/api/auth/padres`);
+            if (response.ok) setPadres(await response.json());
+        } catch (error) {
+            console.error('Error padres:', error);
+        }
+    };
+
+    // Alta/edición de alumno (Sprint 3: RF-03/RF-04/RF-10) contra SQL Server.
+    // Éxito (201): limpia el formulario y muestra un cartel verde.
+    // DNI duplicado (409): muestra el mensaje del backend en un cartel rojo.
     const handleAlumnoSubmit = async (e) => {
         e.preventDefault();
         const form = e.target;
         const alumnoData = {
-            nombre: form.nombre.value,
-            apellido: form.apellido.value,
-            dni: form.dni.value,
+            nombre: form.nombre.value.trim(),
+            apellido: form.apellido.value.trim(),
+            dni: form.dni.value.trim(),
             fecha_nacimiento: form.fecha_nacimiento.value,
-            curso_id: form.curso_id?.value || null,
-            tutor_id: form.tutor_id?.value || null
+            curso_id: parseInt(form.curso_id.value),
+            padre_id: parseInt(form.padre_id.value)
         };
+        if (!alumnoData.curso_id) return setMsgAlumno({ tipo: 'error', texto: 'Seleccioná un curso.' });
+        if (!alumnoData.padre_id) return setMsgAlumno({ tipo: 'error', texto: 'Seleccioná un padre/tutor.' });
 
         try {
-            const token = localStorage.getItem('token');
-            const url = editingAlumno 
+            const url = editingAlumno
                 ? `${API_URL}/api/academico/alumnos/${editingAlumno.id}`
                 : `${API_URL}/api/academico/alumnos`;
-            
-            const response = await fetch(url, {
+
+            const response = await apiFetch(url, {
                 method: editingAlumno ? 'PUT' : 'POST',
-                headers: { 
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}` 
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(alumnoData)
             });
+            const data = await response.json().catch(() => ({}));
             if (response.ok) {
-                setShowAlumnoForm(false);
+                form.reset();
                 setEditingAlumno(null);
                 fetchAlumnos();
+                setMsgAlumno({ tipo: 'ok', texto: data.message || 'Alumno registrado correctamente.' });
+            } else if (response.status === 409) {
+                setMsgAlumno({ tipo: 'error', texto: data.message || 'Ya existe un alumno registrado con ese DNI' });
             } else {
-                const data = await response.json();
-                alert(data.message || 'Error al procesar alumno');
+                setMsgAlumno({ tipo: 'error', texto: data.message || 'Error al procesar el alumno' });
             }
         } catch (error) {
             console.error('Error:', error);
+            setMsgAlumno({ tipo: 'error', texto: 'Error de conexión al registrar el alumno' });
         }
     };
 
@@ -957,27 +983,44 @@ const AdminDashboard = () => {
                                 onChange={(e) => setSearchTermAlumno(e.target.value)}
                             />
                         </div>
-                        <button 
-                            onClick={() => setShowAlumnoForm(!showAlumnoForm)} 
+                        <button
+                            onClick={() => { setShowAlumnoForm(!showAlumnoForm); setMsgAlumno(null); setEditingAlumno(null); }}
                             className="btn btn-green" style={{ fontSize: '0.85rem' }}
                         >
                             {showAlumnoForm ? '✕ Cancelar' : '+ Nuevo Alumno'}
                         </button>
                     </div>
 
+                    {msgAlumno && (
+                        <div role="alert" style={{
+                            marginBottom: '16px', padding: '14px', borderRadius: '12px', fontSize: '0.9rem', fontWeight: 700,
+                            background: msgAlumno.tipo === 'ok' ? '#dcfce7' : '#fee2e2',
+                            color: msgAlumno.tipo === 'ok' ? '#166534' : '#dc2626',
+                            border: `1px solid ${msgAlumno.tipo === 'ok' ? '#bbf7d0' : '#fecaca'}`
+                        }}>
+                            {msgAlumno.tipo === 'ok' ? '✅ ' : '⚠️ '}{msgAlumno.texto}
+                        </div>
+                    )}
+
                     {showAlumnoForm && (
-                        <form onSubmit={handleAlumnoSubmit} style={{ 
+                        <form onSubmit={handleAlumnoSubmit} style={{
                             background: '#f8fafc', padding: '20px', borderRadius: '12px', marginBottom: '24px',
                             display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px'
                         }}>
                             <input type="text" placeholder="Nombre" required style={inputStyle} name="nombre" defaultValue={editingAlumno?.nombre || ''} />
                             <input type="text" placeholder="Apellido" required style={inputStyle} name="apellido" defaultValue={editingAlumno?.apellido || ''} />
-                            <input type="text" placeholder="DNI" required style={inputStyle} name="dni" defaultValue={editingAlumno?.dni || ''} />
+                            <input type="number" placeholder="DNI" required style={inputStyle} name="dni" defaultValue={editingAlumno?.dni || ''} />
                             <input type="date" required style={inputStyle} name="fecha_nacimiento" defaultValue={editingAlumno?.fecha_nacimiento || ''} />
-                            <select style={inputStyle} name="curso_id" defaultValue={editingAlumno?.curso_id || ''}>
-                                <option value="">Asignar Curso (Opcional)</option>
-                                {cursos.map(c => (
-                                    <option key={c.id} value={c.id}>{c.nivel_nombre} - {c.division}</option>
+                            <select required style={inputStyle} name="curso_id" defaultValue={editingAlumno?.curso_id || ''}>
+                                <option value="">Seleccionar Curso</option>
+                                {cursosMssql.map(c => (
+                                    <option key={c.id} value={c.id}>{c.nivel} {c.grado}°{c.division} - {c.turno} ({c.ciclo_lectivo})</option>
+                                ))}
+                            </select>
+                            <select required style={inputStyle} name="padre_id" defaultValue={editingAlumno?.padre_id || ''}>
+                                <option value="">Seleccionar Padre/Tutor</option>
+                                {padres.map(p => (
+                                    <option key={p.id} value={p.id}>{p.nombre} ({p.username})</option>
                                 ))}
                             </select>
                             <button type="submit" className="btn btn-violet" style={{ height: '45px' }}>
@@ -1007,7 +1050,7 @@ const AdminDashboard = () => {
                                                 <td style={tdStyle}>#{a.id}</td>
                                                 <td style={tdStyle}><strong>{a.apellido}, {a.nombre}</strong></td>
                                                 <td style={tdStyle}>{a.dni}</td>
-                                                <td style={tdStyle}>{a.nivel_nombre || 'Sin asignar'} {a.division || ''}</td>
+                                                <td style={tdStyle}>{a.nivel ? `${a.nivel} ${a.grado}°${a.division} - ${a.turno}` : 'Sin asignar'}</td>
                                                 <td style={tdStyle}>
                                                     <button 
                                                         onClick={() => {

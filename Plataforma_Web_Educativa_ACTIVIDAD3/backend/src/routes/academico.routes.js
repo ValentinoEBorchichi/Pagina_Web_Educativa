@@ -18,6 +18,7 @@ router.post('/aulas', requireAuth(['admin']), academicoController.createAula);
 router.delete('/aulas/:id', requireAuth(['admin']), academicoController.deleteAula);
 
 router.get('/cursos', academicoController.getCursos);
+router.get('/cursos-mssql', requireAuth(['admin', 'docente']), academicoController.getCursosMssql);
 router.post('/cursos', requireAuth(['admin']), academicoController.createCurso);
 router.delete('/cursos/:id', requireAuth(['admin']), academicoController.deleteCurso);
 

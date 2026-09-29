@@ -1,6 +1,7 @@
 const db = require('../config/database');
+const { sql, getPool } = require('../config/db');
 const { NOMBRE_REGEX } = require('../utils/validators');
-const { manejarErrorSQL } = require('../utils/dbErrors');
+const { manejarErrorSQL, manejarErrorMssql } = require('../utils/dbErrors');
 
 // Antes este archivo mezclaba 8 entidades distintas en un único controlador de más de 700 líneas; mezclaba 8 entidades distintas en un único archivo de más de 700 líneas (problema señalado en el diagnóstico de la Actividad 1). Cada controlador nuevo agrupa las entidades que cambian juntas y se usan juntas.
 // Acá quedan las entidades de catálogo/estructura académica: niveles,
@@ -90,6 +91,22 @@ exports.getCursos = (req, res) => {
         if (err) return manejarErrorSQL(res, err);
         res.json(rows);
     });
+};
+
+// Listado de cursos de SQL Server (Sprint 3): lo usa el alta de alumnos, cuyo
+// curso_id se valida contra dbo.Cursos. Los "cursos" de arriba son de la
+// tabla SQLite legada, todavía no migrada, y tienen IDs de otro dominio.
+exports.getCursosMssql = async (req, res) => {
+    try {
+        const pool = await getPool();
+        const { recordset } = await pool.request()
+            .query(`SELECT id, nivel, grado, division, turno, ciclo_lectivo, cupo_maximo
+                    FROM dbo.Cursos
+                    ORDER BY ciclo_lectivo DESC, nivel, grado, division`);
+        res.json(recordset);
+    } catch (err) {
+        manejarErrorMssql(res, err);
+    }
 };
 
 exports.createCurso = (req, res) => {
