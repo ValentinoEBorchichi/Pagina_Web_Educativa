@@ -8,50 +8,77 @@ const { manejarErrorSQL, manejarErrorMssql } = require('../utils/dbErrors');
 // academico.controller.js, que antes mezclaba esto con niveles, cursos,
 // materias, actividades y horarios en un solo archivo.
 
-// --- ALUMNOS (Legajos) ---
-exports.getAlumnos = (req, res) => {
-    const query = `
-        SELECT alumnos.*, cursos.division, niveles.nombre as nivel_nombre
-        FROM alumnos 
-        LEFT JOIN cursos ON alumnos.curso_id = cursos.id
-        LEFT JOIN niveles ON cursos.nivel_id = niveles.id
-    `;
-    db.all(query, [], (err, rows) => {
-        if (err) return manejarErrorSQL(res, err);
-        res.json(rows);
-    });
+// --- ALUMNOS (Legajos, Sprint 3: RF-03/RF-04/RF-10) sobre SQL Server ---
+exports.getAlumnos = async (req, res) => {
+    try {
+        const pool = await getPool();
+        const { recordset } = await pool.request()
+            .query(`SELECT a.id, a.dni, a.nombre, a.apellido,
+                           CONVERT(char(10), a.fecha_nacimiento, 23) AS fecha_nacimiento,
+                           a.curso_id, c.nivel, c.grado, c.division,
+                           a.padre_id, a.usa_comedor, a.transporte_id
+                    FROM dbo.Alumnos a
+                    JOIN dbo.Cursos c ON c.id = a.curso_id
+                    ORDER BY a.apellido, a.nombre`);
+        res.json(recordset);
+    } catch (err) {
+        manejarErrorMssql(res, err);
+    }
 };
 
-exports.createAlumno = (req, res) => {
-    const { nombre, apellido, dni, fecha_nacimiento, curso_id, tutor_id } = req.body;
-    if (!nombre || !apellido || !dni || !fecha_nacimiento) {
-        return res.status(400).json({ message: "Nombre, Apellido, DNI y Fecha de Nacimiento son obligatorios" });
+// Alta de alumno: RF-04 lo asigna a un único curso (curso_id es una FK escalar,
+// no puede pertenecer a más de uno) y RF-10 bloquea el alta si el DNI ya existe.
+exports.createAlumno = async (req, res) => {
+    const dni = String(req.body.dni || '').trim();
+    const nombre = String(req.body.nombre || '').trim();
+    const apellido = String(req.body.apellido || '').trim();
+    const fecha_nacimiento = req.body.fecha_nacimiento;
+    const curso_id = parseInt(req.body.curso_id);
+    const padre_id = parseInt(req.body.padre_id);
+
+    if (!nombre || !apellido || !dni || !fecha_nacimiento || !curso_id || !padre_id) {
+        return res.status(400).json({ message: "Nombre, apellido, DNI, fecha de nacimiento, curso_id y padre_id son obligatorios" });
     }
-    if (!NOMBRE_REGEX.test(String(nombre).trim()) || !NOMBRE_REGEX.test(String(apellido).trim())) {
+    if (!NOMBRE_REGEX.test(nombre) || !NOMBRE_REGEX.test(apellido)) {
         return res.status(400).json({ message: "Nombre y apellido solo pueden contener letras (sin números ni símbolos)" });
     }
-    if (!/^\d+$/.test(String(dni).trim())) {
-        return res.status(400).json({ message: "El DNI debe ser numérico (sin puntos ni letras)" });
+    if (!/^\d{7,8}$/.test(dni)) {
+        return res.status(400).json({ message: "El DNI debe ser numérico de 7 u 8 dígitos" });
     }
 
-    if (curso_id) {
-        db.get("SELECT cupo, (SELECT COUNT(*) FROM alumnos WHERE curso_id = ?) as inscriptos FROM cursos WHERE id = ?", [curso_id, curso_id], (err, curso) => {
-            if (err) return manejarErrorSQL(res, err);
-            if (!curso) return res.status(404).json({ message: "Curso no encontrado" });
-            if (curso.inscriptos >= curso.cupo) return res.status(400).json({ message: "No hay vacantes disponibles en este curso" });
+    try {
+        const pool = await getPool();
 
-            saveAlumno();
-        });
-    } else {
-        saveAlumno();
-    }
+        // RF-10: bloquear el alta si el DNI ya existe.
+        const { recordset: existentes } = await pool.request()
+            .input('dni', sql.VarChar(8), dni)
+            .query('SELECT id FROM dbo.Alumnos WHERE dni = @dni');
+        if (existentes[0]) {
+            return res.status(409).json({ message: "Ya existe un alumno registrado con ese DNI" });
+        }
 
-    function saveAlumno() {
-        const query = "INSERT INTO alumnos (nombre, apellido, dni, fecha_nacimiento, curso_id, tutor_id) VALUES (?, ?, ?, ?, ?, ?)";
-        db.run(query, [nombre, apellido, dni, fecha_nacimiento, curso_id || null, tutor_id || null], function(err) {
-            if (err) return manejarErrorSQL(res, err);
-            res.status(201).json({ id: this.lastID });
-        });
+        const { recordset } = await pool.request()
+            .input('dni', sql.VarChar(8), dni)
+            .input('nombre', sql.NVarChar(100), nombre)
+            .input('apellido', sql.NVarChar(100), apellido)
+            .input('fecha_nacimiento', sql.Date, fecha_nacimiento)
+            .input('curso', sql.Int, curso_id)
+            .input('padre', sql.Int, padre_id)
+            .input('usa_comedor', sql.Bit, !!req.body.usa_comedor)
+            .input('transporte', sql.Int, req.body.transporte_id ? parseInt(req.body.transporte_id) : null)
+            .query(`INSERT INTO dbo.Alumnos (dni, nombre, apellido, fecha_nacimiento, curso_id, padre_id, usa_comedor, transporte_id)
+                    OUTPUT INSERTED.id
+                    VALUES (@dni, @nombre, @apellido, @fecha_nacimiento, @curso, @padre, @usa_comedor, @transporte)`);
+
+        res.status(201).json({ id: recordset[0].id, message: "Alumno registrado correctamente" });
+    } catch (err) {
+        if (err.number === 2627 || err.number === 2601) {
+            return res.status(409).json({ message: "Ya existe un alumno registrado con ese DNI" });
+        }
+        if (err.number === 547) {
+            return res.status(409).json({ message: "El curso o el padre indicado no existe, o no tiene el rol requerido" });
+        }
+        manejarErrorMssql(res, err);
     }
 };
 
