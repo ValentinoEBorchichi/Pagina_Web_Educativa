@@ -24,7 +24,7 @@ Proyecto desarrollado en el marco de la Tecnicatura Universitaria en Programaci�
 
 ## Instalación y ejecución
 
-El código fuente se encuentra en el directorio `Plataforma_Web_Educativa_ACTIVIDAD3/`, organizado en dos subproyectos independientes: `frontend` y `backend`. Los comandos de esta sección se ejecutan a partir de dicho directorio.
+El código fuente se encuentra en el directorio `Plataforma_Web_Educativa_ACTIVIDAD3/`, organizado en tres subproyectos independientes: `frontend`, `backend` y `mobile` (aplicación móvil para padres, véase *Etapa D*). Los comandos de esta sección se ejecutan a partir de dicho directorio.
 
 ### 1. Configuración del backend
 ```powershell
@@ -72,6 +72,8 @@ Las rutas se expresan en forma relativa al directorio `Plataforma_Web_Educativa_
 *   `frontend/src/components/`: componentes atómicos y *layouts* reutilizables.
 *   `frontend/src/pages/`: vistas principales y paneles específicos de cada rol.
 *   `frontend/src/context/`: lógica global de autenticación.
+*   `backend/docs/openapi-movil.yaml`: contrato de la API consumida por la aplicación móvil (OpenAPI 3.0).
+*   `mobile/`: aplicación móvil en React Native (Expo) con React Navigation; las pantallas se ubican en `mobile/src/screens/`.
 
 ---
 
@@ -431,6 +433,48 @@ $asig = @{ profesor_id = 2; materia_id = 3; curso_id = 2 } | ConvertTo-Json
 Invoke-RestMethod -Method Post -Uri "$api/api/profesores/asignar" -ContentType 'application/json' `
     -Headers @{ Authorization = "Bearer $admin" } -Body $asig
 ```
+
+---
+
+## Etapa D — Diseño de la aplicación móvil (Responsable: Sebastián Flores)
+
+**Alcance:** arquitectura de integración web-móvil, contrato de la API para la aplicación React Native y código base de las pantallas del Sprint 1 móvil (HU2 y HU4).
+
+### Arquitectura de integración web-móvil
+
+La aplicación web (React + Vite) y la aplicación móvil (React Native) consumen **la misma API REST** de Express bajo `/api/*`; no se mantiene un *backend* separado para el canal móvil. La autenticación reutiliza el JWT emitido por `POST /api/auth/login` (validez de 30 minutos), que la aplicación envía en el encabezado `Authorization: Bearer <token>`; ante una respuesta **401** se vuelve a la pantalla de inicio de sesión. Las reglas de acceso (RF-01 y RF-02) son las mismas que en la web: el identificador del padre se toma siempre del token.
+
+### Contrato de la API
+
+El contrato completo, con rutas, parámetros, ejemplos de respuesta y códigos de error, se encuentra en [`backend/docs/openapi-movil.yaml`](Plataforma_Web_Educativa_ACTIVIDAD3/backend/docs/openapi-movil.yaml) y puede visualizarse con cualquier herramienta compatible con OpenAPI 3.0 (p. ej., [Swagger Editor](https://editor.swagger.io)).
+
+| Método | Ruta | Roles | Estado | Descripción |
+| :--- | :--- | :--- | :--- | :--- |
+| `POST` | `/api/auth/login` | Público | Existente | Inicio de sesión; la aplicación móvil admite únicamente el rol `padre`. |
+| `GET` | `/api/auth/me` | Autenticado | Existente | Validación del token almacenado en el dispositivo. |
+| `POST` | `/api/auth/recuperar-password` | Público | Diseñado | Envío por correo de un token de recuperación a partir del DNI (HU2). |
+| `POST` | `/api/auth/restablecer-password` | Público | Diseñado | Restablecimiento de la contraseña con el token recibido (HU2). |
+| `GET` | `/api/inscripciones/:alumnoId` | padre, alumno, admin | Diseñado | Deportes (máximo dos) y transporte vigentes del alumno (HU4). |
+| `GET` | `/api/financiero/alumnos/:alumnoId/cuotas` | padre, admin | Diseñado | Cuotas pendientes (filtro `estado`) y total adeudado. |
+| `GET` | `/api/financiero/alumnos/:alumnoId/pagos` | padre, admin | Diseñado | Historial de pagos del alumno. |
+| `POST` | `/api/financiero/comprobantes` | padre, admin | Diseñado | Emisión de un comprobante con las cuotas seleccionadas y los datos para transferir. |
+| `POST` | `/api/financiero/comprobantes/:comprobanteId/transferencias` | padre, admin | Diseñado | Carga de la constancia de transferencia (`multipart/form-data`). |
+
+Los *endpoints* del módulo financiero requieren nuevas tablas en SQL Server (`Cuotas`, `Comprobantes`, `Comprobantes_Cuotas` y `Transferencias`).
+
+### Aplicación móvil (`mobile/`)
+
+```powershell
+cd mobile
+npm install
+npm run android   # requiere un emulador de Android o la app Expo Go
+```
+*La URL de la API se configura en `mobile/src/config.js` (por defecto `http://10.0.2.2:3000`, que desde el emulador de Android apunta a la PC). Mientras `POST /api/auth/recuperar-password` no esté implementado, la pantalla de recuperación simula la respuesta (`SIMULAR_RECUPERACION = true`).*
+
+| Pantalla | Historia | Descripción |
+| :--- | :--- | :--- |
+| `RecuperarPasswordScreen` | HU2 | Formulario de DNI (7 u 8 dígitos) que solicita el envío del token de recuperación. |
+| `ServiciosAlumnoScreen` | HU4 | Listado de los deportes y del recorrido de transporte vigentes del alumno; recibe `{ alumnoId, token }` como parámetros de navegación. |
 
 ---
 

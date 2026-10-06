@@ -1,0 +1,889 @@
+openapi: 3.0.3
+info:
+  title: API Educar para Transformar — App móvil de padres
+  version: 1.0.0
+  description: |
+    Contrato de la API REST que consume la app móvil (React Native) — Etapa D (Diseño).
+
+    ## Arquitectura de integración web-móvil
+    - **Un solo backend:** la web (React + Vite) y la app móvil (React Native) consumen la misma
+      API Express bajo `/api/*`. No existe un backend separado para móvil.
+    - **Autenticación:** JWT `Authorization: Bearer <token>` emitido por `POST /api/auth/login`,
+      con validez de 30 minutos. La app lo guarda en almacenamiento seguro del dispositivo y,
+      ante un **401**, vuelve a la pantalla de login.
+    - **Autorización:** `requireAuth(roles)` (RF-01). Un padre solo accede a datos de sus hijos
+      (RF-02): el id del padre se toma siempre del token, nunca del cliente.
+    - **Datos:** SQL Server mediante `src/config/db.js`. Los archivos de comprobantes de
+      transferencia se guardan fuera de la base; en la base solo se registra su ruta.
+    - **Convenciones:** JSON UTF-8; fechas ISO 8601 en UTC (`DATETIME2`); montos en pesos con
+      2 decimales; errores con la forma `{ "message": "...", "codigo": "..." }`, donde `message`
+      se muestra al usuario y `codigo` lo interpreta la app.
+
+    Los endpoints marcados como **existente** ya están implementados; el resto está diseñado y
+    pendiente de implementación.
+servers:
+  - url: http://localhost:3000
+    description: Desarrollo local (desde el emulador de Android usar http://10.0.2.2:3000)
+
+tags:
+  - name: Autenticación
+    description: Login de padres, validación de token y recuperación de contraseña (HU2).
+  - name: Inscripciones
+    description: Servicios vigentes del alumno — deportes y transporte (HU4).
+  - name: Financiero
+    description: |
+      Cuotas, historial de pagos, emisión de comprobantes y carga de transferencias.
+      Requiere nuevas tablas en SQL Server: `Cuotas`, `Comprobantes`, `Comprobantes_Cuotas`
+      y `Transferencias`.
+
+paths:
+  /api/auth/login:
+    post:
+      tags: [Autenticación]
+      summary: Login (existente)
+      description: |
+        Valida usuario y contraseña contra la tabla `Usuarios` y devuelve un JWT.
+        La app móvil solo admite `user.rol = "padre"`; con otro rol muestra
+        "Esta app es exclusiva para padres" y descarta el token.
+      operationId: login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+            example:
+              username: padre
+              password: padre123
+      responses:
+        '200':
+          description: Credenciales válidas.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+              example:
+                token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+                user:
+                  id: 2
+                  username: padre
+                  nombre: Carlos Fernández
+                  rol: padre
+        '400':
+          description: Faltan usuario o contraseña.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                message: Usuario y contraseña requeridos
+        '401':
+          description: Credenciales inválidas.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                message: Credenciales inválidas
+        '403':
+          description: Cuenta desactivada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                message: La cuenta está desactivada. Contactá a la institución.
+
+  /api/auth/me:
+    get:
+      tags: [Autenticación]
+      summary: Validación de token (existente)
+      description: |
+        La app lo invoca al iniciar para saber si el token guardado sigue vigente.
+        200 = sesión válida; 401 = volver al login.
+      operationId: getMe
+      responses:
+        '200':
+          description: Token válido.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Usuario'
+              example:
+                id: 2
+                username: padre
+                nombre: Carlos Fernández
+                rol: padre
+                created_at: '2026-09-01T12:00:00.000Z'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+
+  /api/auth/recuperar-password:
+    post:
+      tags: [Autenticación]
+      summary: Solicitar recuperación de contraseña (HU2)
+      description: |
+        Recibe el DNI del titular de la cuenta y envía al correo registrado un token de un
+        solo uso, válido por 15 minutos. Siempre responde 202 con el mismo mensaje, exista o
+        no el DNI, para no revelar qué cuentas existen. Límite: 3 solicitudes por DNI por hora.
+      operationId: recuperarPassword
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [dni]
+              properties:
+                dni:
+                  type: string
+                  pattern: '^\d{7,8}$'
+            example:
+              dni: '28456789'
+      responses:
+        '202':
+          description: Solicitud aceptada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Mensaje'
+              example:
+                message: Si el DNI está registrado, vas a recibir un correo con las instrucciones.
+        '400':
+          description: DNI con formato inválido.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                message: El DNI debe tener 7 u 8 dígitos numéricos
+                codigo: DATOS_INVALIDOS
+        '429':
+          description: Demasiadas solicitudes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                message: Demasiados intentos. Probá de nuevo en una hora.
+                codigo: DEMASIADOS_INTENTOS
+
+  /api/auth/restablecer-password:
+    post:
+      tags: [Autenticación]
+      summary: Restablecer contraseña con el token recibido (HU2)
+      operationId: restablecerPassword
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, password]
+              properties:
+                token:
+                  type: string
+                password:
+                  type: string
+                  description: Mínimo 8 caracteres, una mayúscula, un número y un carácter especial.
+            example:
+              token: 9f2c1e7a4b
+              password: NuevaClave1!
+      responses:
+        '200':
+          description: Contraseña actualizada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Mensaje'
+              example:
+                message: Contraseña actualizada. Ya podés iniciar sesión.
+        '400':
+          description: Token inválido/vencido o contraseña débil.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                tokenInvalido:
+                  value:
+                    message: El enlace de recuperación es inválido o expiró
+                    codigo: TOKEN_INVALIDO
+                passwordDebil:
+                  value:
+                    message: La contraseña debe incluir al menos una mayúscula.
+                    codigo: PASSWORD_DEBIL
+
+  /api/inscripciones/{alumnoId}:
+    get:
+      tags: [Inscripciones]
+      summary: Servicios vigentes del alumno (HU4)
+      description: |
+        Deportes en los que está inscripto (máximo 2, RF-06) y recorrido de transporte
+        asignado (RF-09). Roles: `padre` (solo sus hijos), `alumno` (solo su legajo), `admin`.
+      operationId: getInscripcionesAlumno
+      parameters:
+        - $ref: '#/components/parameters/AlumnoId'
+      responses:
+        '200':
+          description: Servicios del alumno.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InscripcionesAlumno'
+              example:
+                alumno:
+                  id: 3
+                  nombre: Mateo
+                  apellido: Fernández
+                deportes:
+                  - id: 1
+                    nombre: Fútbol
+                    horario: Lun y Mié 16:00 a 17:30
+                    fecha_inscripcion: '2026-09-10T14:20:00.000Z'
+                transporte:
+                  id: 1
+                  numero_recorrido: 1
+                  nombre: Recorrido Norte
+                  zona: Zona norte de Resistencia
+                  hora_salida: '07:10'
+        '400':
+          $ref: '#/components/responses/DatosInvalidos'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '404':
+          $ref: '#/components/responses/AlumnoNoEncontrado'
+
+  /api/financiero/alumnos/{alumnoId}/cuotas:
+    get:
+      tags: [Financiero]
+      summary: Cuotas del alumno
+      description: Por defecto devuelve las cuotas pendientes (incluye las vencidas). Roles `padre` (sus hijos) y `admin`.
+      operationId: getCuotasAlumno
+      parameters:
+        - $ref: '#/components/parameters/AlumnoId'
+        - name: estado
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [pendiente, vencida, pagada, todas]
+            default: pendiente
+        - name: anio
+          in: query
+          required: false
+          schema:
+            type: integer
+            example: 2026
+      responses:
+        '200':
+          description: Cuotas del alumno y total adeudado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CuotasAlumno'
+              example:
+                alumno_id: 3
+                total_adeudado: 91500.00
+                cuotas:
+                  - id: 31
+                    concepto: Cuota mensual
+                    mes: 9
+                    anio: 2026
+                    monto: 45000.00
+                    recargo: 1500.00
+                    total: 46500.00
+                    vencimiento: '2026-09-10'
+                    estado: vencida
+                  - id: 32
+                    concepto: Cuota mensual
+                    mes: 10
+                    anio: 2026
+                    monto: 45000.00
+                    recargo: 0.00
+                    total: 45000.00
+                    vencimiento: '2026-10-10'
+                    estado: pendiente
+        '400':
+          $ref: '#/components/responses/DatosInvalidos'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '404':
+          $ref: '#/components/responses/AlumnoNoEncontrado'
+
+  /api/financiero/alumnos/{alumnoId}/pagos:
+    get:
+      tags: [Financiero]
+      summary: Historial de pagos del alumno
+      description: Ordenado del más reciente al más antiguo. Roles `padre` (sus hijos) y `admin`.
+      operationId: getHistorialPagos
+      parameters:
+        - $ref: '#/components/parameters/AlumnoId'
+        - name: anio
+          in: query
+          required: false
+          schema:
+            type: integer
+            example: 2026
+      responses:
+        '200':
+          description: Historial de pagos.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HistorialPagos'
+              example:
+                alumno_id: 3
+                pagos:
+                  - id: 88
+                    fecha_pago: '2026-08-08T13:45:00.000Z'
+                    monto_pagado: 45000.00
+                    metodo_pago: transferencia
+                    estado: aprobado
+                    comprobante_id: 120
+                    cuotas:
+                      - id: 30
+                        mes: 8
+                        anio: 2026
+                  - id: 91
+                    fecha_pago: '2026-09-12T10:02:00.000Z'
+                    monto_pagado: 46500.00
+                    metodo_pago: transferencia
+                    estado: en_revision
+                    comprobante_id: 124
+                    cuotas:
+                      - id: 31
+                        mes: 9
+                        anio: 2026
+        '400':
+          $ref: '#/components/responses/DatosInvalidos'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '404':
+          $ref: '#/components/responses/AlumnoNoEncontrado'
+
+  /api/financiero/comprobantes:
+    post:
+      tags: [Financiero]
+      summary: Emitir comprobante con los ítems seleccionados
+      description: |
+        El padre selecciona una o más cuotas pendientes de un hijo y el sistema emite un
+        comprobante con el total y los datos bancarios para transferir. Las cuotas quedan
+        reservadas en ese comprobante hasta su vencimiento (48 h). Roles `padre` y `admin`.
+      operationId: emitirComprobante
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmitirComprobanteRequest'
+            example:
+              alumno_id: 3
+              cuota_ids: [31, 32]
+      responses:
+        '201':
+          description: Comprobante emitido.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  comprobante:
+                    $ref: '#/components/schemas/Comprobante'
+              example:
+                message: Comprobante emitido
+                comprobante:
+                  id: 125
+                  numero: '000125'
+                  alumno_id: 3
+                  estado: pendiente_pago
+                  fecha_emision: '2026-10-06T15:30:00.000Z'
+                  vencimiento: '2026-10-08T15:30:00.000Z'
+                  items:
+                    - cuota_id: 31
+                      descripcion: Cuota mensual 09/2026
+                      monto: 46500.00
+                    - cuota_id: 32
+                      descripcion: Cuota mensual 10/2026
+                      monto: 45000.00
+                  total: 91500.00
+                  datos_transferencia:
+                    banco: Banco de ejemplo
+                    titular: Educar para Transformar
+                    cuit: 30-00000000-0
+                    cbu: '0000000000000000000000'
+                    alias: EDUCAR.TRANSFORMAR.CUOTAS
+        '400':
+          $ref: '#/components/responses/DatosInvalidos'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '404':
+          description: Alguna cuota no existe o no pertenece al alumno.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                message: La cuota 99 no existe para este alumno
+                codigo: CUOTA_NO_ENCONTRADA
+        '409':
+          description: Alguna cuota ya está pagada o reservada en otro comprobante vigente.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                message: La cuota 09/2026 ya está incluida en el comprobante 000124
+                codigo: CUOTA_NO_DISPONIBLE
+
+  /api/financiero/comprobantes/{comprobanteId}/transferencias:
+    post:
+      tags: [Financiero]
+      summary: Cargar comprobante de transferencia bancaria
+      description: |
+        Adjunta la constancia de la transferencia (JPG, PNG o PDF, máx. 5 MB). El comprobante
+        pasa a `en_revision` hasta que administración lo apruebe o rechace. Roles `padre` y `admin`.
+      operationId: cargarTransferencia
+      parameters:
+        - name: comprobanteId
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [archivo, monto, fecha_transferencia]
+              properties:
+                archivo:
+                  type: string
+                  format: binary
+                  description: Constancia de la transferencia (image/jpeg, image/png o application/pdf; máx. 5 MB).
+                monto:
+                  type: number
+                  format: double
+                  description: Debe coincidir con el total del comprobante.
+                  example: 91500.00
+                fecha_transferencia:
+                  type: string
+                  format: date
+                  example: '2026-10-06'
+                numero_operacion:
+                  type: string
+                  maxLength: 50
+                  example: '845120399'
+            encoding:
+              archivo:
+                contentType: image/jpeg, image/png, application/pdf
+      responses:
+        '201':
+          description: Transferencia recibida y en revisión.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  transferencia:
+                    $ref: '#/components/schemas/Transferencia'
+              example:
+                message: Recibimos tu comprobante. Te avisaremos cuando sea aprobado.
+                transferencia:
+                  id: 57
+                  comprobante_id: 125
+                  monto: 91500.00
+                  fecha_transferencia: '2026-10-06'
+                  numero_operacion: '845120399'
+                  archivo_nombre: transferencia_125.jpg
+                  estado: en_revision
+                  fecha_carga: '2026-10-06T15:42:10.000Z'
+        '400':
+          description: Datos o archivo inválidos.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                archivoInvalido:
+                  value:
+                    message: El archivo debe ser JPG, PNG o PDF
+                    codigo: ARCHIVO_INVALIDO
+                montoDistinto:
+                  value:
+                    message: El monto informado no coincide con el total del comprobante ($91500.00)
+                    codigo: MONTO_INCORRECTO
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '404':
+          description: Comprobante inexistente.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                message: Comprobante no encontrado
+                codigo: COMPROBANTE_NO_ENCONTRADO
+        '409':
+          description: El comprobante no admite carga (pagado, en revisión o vencido).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                message: El comprobante 000125 ya tiene una transferencia en revisión
+                codigo: COMPROBANTE_NO_PENDIENTE
+        '413':
+          description: Archivo mayor a 5 MB.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                message: El archivo no puede superar los 5 MB
+                codigo: ARCHIVO_DEMASIADO_GRANDE
+
+security:
+  - bearerAuth: []
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    AlumnoId:
+      name: alumnoId
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+
+  responses:
+    DatosInvalidos:
+      description: Parámetros ausentes o con formato inválido.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            message: Alumno inválido
+            codigo: DATOS_INVALIDOS
+    NoAutenticado:
+      description: Token ausente, inválido o vencido.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            message: Token inválido o expirado
+    SinPermiso:
+      description: El rol no tiene acceso o el alumno no es hijo del padre autenticado (RF-02).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            message: No tenés acceso a los datos de este alumno
+            codigo: SIN_PERMISO
+    AlumnoNoEncontrado:
+      description: El alumno no existe.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            message: Alumno no encontrado
+            codigo: ALUMNO_NO_ENCONTRADO
+
+  schemas:
+    Error:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+        codigo:
+          type: string
+
+    Mensaje:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+          description: Usuario o correo electrónico.
+        password:
+          type: string
+
+    LoginResponse:
+      type: object
+      required: [token, user]
+      properties:
+        token:
+          type: string
+          description: JWT con validez de 30 minutos.
+        user:
+          $ref: '#/components/schemas/Usuario'
+
+    Usuario:
+      type: object
+      properties:
+        id:
+          type: integer
+        username:
+          type: string
+        nombre:
+          type: string
+        rol:
+          type: string
+          enum: [admin, docente, alumno, padre]
+        created_at:
+          type: string
+          format: date-time
+
+    InscripcionesAlumno:
+      type: object
+      properties:
+        alumno:
+          type: object
+          properties:
+            id:
+              type: integer
+            nombre:
+              type: string
+            apellido:
+              type: string
+        deportes:
+          type: array
+          maxItems: 2
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+              nombre:
+                type: string
+              horario:
+                type: string
+                description: Texto legible, p. ej. "Lun y Mié 16:00 a 17:30".
+              fecha_inscripcion:
+                type: string
+                format: date-time
+        transporte:
+          type: object
+          nullable: true
+          description: null si el alumno no usa transporte escolar.
+          properties:
+            id:
+              type: integer
+            numero_recorrido:
+              type: integer
+              minimum: 1
+              maximum: 4
+            nombre:
+              type: string
+            zona:
+              type: string
+              nullable: true
+            hora_salida:
+              type: string
+              nullable: true
+              example: '07:10'
+
+    Cuota:
+      type: object
+      properties:
+        id:
+          type: integer
+        concepto:
+          type: string
+        mes:
+          type: integer
+          minimum: 1
+          maximum: 12
+        anio:
+          type: integer
+        monto:
+          type: number
+          format: double
+        recargo:
+          type: number
+          format: double
+        total:
+          type: number
+          format: double
+        vencimiento:
+          type: string
+          format: date
+        estado:
+          type: string
+          enum: [pendiente, vencida, en_revision, pagada]
+
+    CuotasAlumno:
+      type: object
+      properties:
+        alumno_id:
+          type: integer
+        total_adeudado:
+          type: number
+          format: double
+        cuotas:
+          type: array
+          items:
+            $ref: '#/components/schemas/Cuota'
+
+    HistorialPagos:
+      type: object
+      properties:
+        alumno_id:
+          type: integer
+        pagos:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+              fecha_pago:
+                type: string
+                format: date-time
+              monto_pagado:
+                type: number
+                format: double
+              metodo_pago:
+                type: string
+                enum: [transferencia, efectivo, tarjeta]
+              estado:
+                type: string
+                enum: [en_revision, aprobado, rechazado]
+              comprobante_id:
+                type: integer
+                nullable: true
+              cuotas:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: integer
+                    mes:
+                      type: integer
+                    anio:
+                      type: integer
+
+    EmitirComprobanteRequest:
+      type: object
+      required: [alumno_id, cuota_ids]
+      properties:
+        alumno_id:
+          type: integer
+          minimum: 1
+        cuota_ids:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            type: integer
+            minimum: 1
+
+    Comprobante:
+      type: object
+      properties:
+        id:
+          type: integer
+        numero:
+          type: string
+        alumno_id:
+          type: integer
+        estado:
+          type: string
+          enum: [pendiente_pago, en_revision, pagado, rechazado, vencido]
+        fecha_emision:
+          type: string
+          format: date-time
+        vencimiento:
+          type: string
+          format: date-time
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              cuota_id:
+                type: integer
+              descripcion:
+                type: string
+              monto:
+                type: number
+                format: double
+        total:
+          type: number
+          format: double
+        datos_transferencia:
+          type: object
+          properties:
+            banco:
+              type: string
+            titular:
+              type: string
+            cuit:
+              type: string
+            cbu:
+              type: string
+            alias:
+              type: string
+
+    Transferencia:
+      type: object
+      properties:
+        id:
+          type: integer
+        comprobante_id:
+          type: integer
+        monto:
+          type: number
+          format: double
+        fecha_transferencia:
+          type: string
+          format: date
+        numero_operacion:
+          type: string
+          nullable: true
+        archivo_nombre:
+          type: string
+        estado:
+          type: string
+          enum: [en_revision, aprobada, rechazada]
+        fecha_carga:
+          type: string
+          format: date-time
