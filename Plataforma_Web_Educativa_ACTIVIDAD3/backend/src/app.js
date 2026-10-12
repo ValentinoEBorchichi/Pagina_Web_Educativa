@@ -17,6 +17,7 @@ const authRoutes = require('./routes/auth.routes');
 const preinscripcionRoutes = require('./routes/preinscripcion.routes');
 
 app.use('/api/auth', authRoutes);
+app.use('/api/admin', require('./routes/admin.routes'));
 app.use('/api/preinscripciones', preinscripcionRoutes);
 app.use('/api/academico', require('./routes/academico.routes'));
 app.use('/api/financiero', require('./routes/financiero.routes'));

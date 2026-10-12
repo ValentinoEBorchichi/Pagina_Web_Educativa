@@ -96,19 +96,21 @@ exports.registroFamiliar = async (req, res) => {
 };
 
 exports.login = async (req, res) => {
-    const username = String(req.body.username || '').trim().toLowerCase();
+    const dni = String(req.body.dni || req.body.username || '').trim().toLowerCase();
     const { password } = req.body;
 
-    if (!username || !password) {
-        return res.status(400).json({ message: 'Usuario y contraseña requeridos' });
+    if (!dni || !password) {
+        return res.status(400).json({ message: 'DNI y contraseña requeridos' });
     }
 
     try {
         const pool = await getPool();
         const { recordset } = await pool.request()
-            .input('username', sql.VarChar(USERNAME_MAX), username)
-            .query(`SELECT id, username, password_hash, ${NOMBRE_COMPLETO} AS nombre, rol, activo
-                    FROM Usuarios WHERE username = @username`);
+            .input('dni', sql.VarChar(20), dni)
+            .query(`SELECT u.id, u.username, u.password_hash, ${NOMBRE_COMPLETO.replaceAll('nombre', 'u.nombre').replaceAll('apellido', 'u.apellido')} AS nombre, u.rol, u.activo
+                    FROM Usuarios u
+                    LEFT JOIN Alumnos a ON a.usuario_id = u.id
+                    WHERE u.username = @dni OR a.dni = @dni`);
         const user = recordset[0];
 
         if (!user || !(await bcrypt.compare(String(password), user.password_hash))) {

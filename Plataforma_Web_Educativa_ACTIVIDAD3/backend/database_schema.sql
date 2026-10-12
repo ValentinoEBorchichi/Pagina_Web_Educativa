@@ -28,6 +28,20 @@ SET ANSI_NULLS ON;
 SET QUOTED_IDENTIFIER ON;
 GO
 
+DROP TABLE IF EXISTS dbo.TarifaConcepto;
+GO
+
+CREATE TABLE dbo.TarifaConcepto (
+    id              INT IDENTITY(1,1) NOT NULL,
+    tipo_servicio   VARCHAR(20) NOT NULL,
+    monto           DECIMAL(12,2) NOT NULL,
+    vigencia        DATE NOT NULL,
+    CONSTRAINT PK_TarifaConcepto PRIMARY KEY (id),
+    CONSTRAINT CK_TarifaConcepto_tipo CHECK (tipo_servicio IN ('cuota', 'deporte', 'transporte', 'comedor')),
+    CONSTRAINT CK_TarifaConcepto_monto CHECK (monto > 0)
+);
+GO
+
 -- Fechas: las columnas DATETIME2 guardan la hora en UTC (SYSUTCDATETIME),
 -- porque el driver mssql las devuelve como UTC y el frontend las convierte a
 -- la hora local. Las columnas DATE guardan la fecha local del calendario.

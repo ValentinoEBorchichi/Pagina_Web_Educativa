@@ -488,6 +488,88 @@ npm run android   # requiere un emulador de Android o la app Expo Go
 
 ---
 
+## Integración continua y calidad
+
+La integración continua se implementa con CircleCI mediante el archivo `Plataforma_Web_Educativa_ACTIVIDAD3/.circleci/config.yml`. En cada ejecución se realiza checkout del repositorio, instalación reproducible de dependencias con `npm ci`, lint del frontend, tests automatizados del backend, build del frontend y build raíz utilizado por Railway. El directorio `frontend/dist` se conserva como artefacto de la ejecución.
+
+La validación automatizada del backend utiliza Node Test Runner y cubre la validación de nombres en `backend/test/validators.test.js`: acepta nombres con letras, espacios y signos habituales, rechaza números o símbolos no permitidos y controla espacios externos. El frontend dispone de ESLint; las advertencias existentes se informan sin bloquear el pipeline para no ocultar deuda técnica.
+
+### Resultado de la verificación local de esta copia
+
+Los siguientes resultados corresponden a la copia SQL Server ubicada en `Plataforma_Web_Educativa_ACTIVIDAD3/` y fueron obtenidos ejecutando los comandos del proyecto:
+
+| Control | Resultado | Interpretación |
+| --- | ---: | --- |
+| Tests backend | 3 aprobados, 0 fallidos | Correcto |
+| Lint frontend | 0 errores, 53 advertencias | Pasa; advertencias pendientes de refactor |
+| Build frontend | Exitoso | Correcto |
+| Build raíz | Exitoso | Compatible con el despliegue configurado |
+| Artefacto | `frontend/dist` | Generado por el build |
+
+No se informan como métricas propias del proyecto valores de duración, frecuencia de despliegue, MTTR o Change Failure Rate porque requieren datos históricos de CircleCI, GitHub y Railway.
+
+### Pull Requests y revisión de código
+
+El repositorio utiliza GitHub como repositorio remoto, con rama principal `main` y commits descriptivos. La plantilla `Plataforma_Web_Educativa_ACTIVIDAD3/.github/pull_request_template.md` solicita descripción, problema resuelto, pruebas, lint, build, riesgos, actualización de documentación y revisión de secretos. El repositorio tiene habilitado Issues, aunque al momento de la verificación no presenta issues abiertos. Existe un Pull Request histórico cerrado asociado al badge de Codacy. No se afirma que la protección de `main` esté activa porque no fue verificada.
+
+### Despliegue y variables de entorno
+
+Railway se configura mediante `railway.json`: ejecuta `npm start`, controla la salud con `/api/health` y reinicia ante fallos. El archivo `DEPLOY_RAILWAY.md` documenta el servicio único, el dominio, el volumen persistente y las variables necesarias. Las credenciales de SQL Server y `JWT_SECRET` se parametrizan con archivos `.env` locales y variables del servicio; los secretos no deben incluirse en Git.
+
+### Estado de contenidos de la unidad 4
+
+| Contenido | Estado | Evidencia en el proyecto |
+| --- | --- | --- |
+| Integración Continua | Aplicado | CircleCI ejecuta instalación, lint, tests y builds. |
+| Despliegue Continuo | Parcialmente aplicado | Railway permite redeploy al subir cambios, pero no se verificó la conexión activa ni un despliegue automático histórico. |
+| Build | Aplicado | Scripts `build` de frontend y raíz; se genera `frontend/dist`. |
+| Pipelines | Aplicado | Pipeline `quality_checks` en CircleCI. |
+| Variables de Entorno | Aplicado | `.env.example`, `backend/.env` local y variables documentadas para Railway. |
+| Gestión de Artefactos | Aplicado | CircleCI guarda `frontend/dist` como artefacto. |
+| Integración de repositorios con CI/CD | Preparado | GitHub es el remoto y CircleCI tiene configuración; falta corroborar la activación en la cuenta. |
+| Pull Requests y Merge Requests | Aplicado parcialmente | Plantilla de PR y revisión documentada; no se verificó una política obligatoria de aprobación. |
+| Issues | Disponible | GitHub Issues está habilitado; no hay issues abiertos al verificar. |
+| Wikis | No aplicado | La wiki del repositorio está deshabilitada. |
+| Tablero Kanban | No corroborado | GitHub indica soporte de Projects, pero no se encontró un tablero accesible mediante la API consultada. |
+| Codacy | Aplicado | El README contiene badge y enlace al análisis del repositorio. |
+
+## Consigna 3 Contenidos no aplicados
+
+### 3.a Opciones seleccionadas
+
+Se seleccionan Integración Continua y Gestión de Artefactos porque reducen el riesgo de incorporar cambios defectuosos y permiten conservar el resultado compilado para inspección o distribución.
+
+### 3.b Aplicación realizada
+
+La Integración Continua se aplicó con CircleCI y un pipeline reproducible que ejecuta lint, tests y builds sobre cada cambio procesado. La Gestión de Artefactos se aplicó almacenando `frontend/dist` al finalizar el pipeline. Además, se agregó una plantilla de Pull Request para documentar pruebas, riesgos y revisión de código.
+
+## Consigna 4 Métricas de productividad
+
+### 4.a Herramientas seleccionadas
+
+Se seleccionan GitHub para revisar Pull Requests, Issues y flujo de trabajo; CircleCI para medir ejecuciones, duración, fallos y artefactos; Railway para observar despliegues y logs; y Codacy para complementar la revisión estática de calidad.
+
+### 4.b Resultados disponibles
+
+La medición reproducible realizada en la copia correcta obtuvo 3/3 tests aprobados, 0 errores de lint, 53 advertencias de lint, build frontend exitoso, build raíz exitoso y artefacto `frontend/dist` generado. Las métricas históricas de PR, despliegues, MTTR y fallos de cambio quedan pendientes de obtener desde las plataformas.
+
+### 4.c Estrategias de mejora
+
+Se propone reducir progresivamente las 53 advertencias de ESLint, exigir revisión mediante Pull Request, activar y verificar la integración de CircleCI con GitHub, documentar Issues y tareas en un tablero Kanban, y registrar en cada despliegue el resultado del healthcheck de Railway. También se recomienda separar la línea base local de las métricas históricas externas para que los valores sean auditables.
+
+### 4.d Tabla comparativa
+
+| Indicador | Antes de la mejora | Después de la mejora | Evidencia |
+| --- | --- | --- | --- |
+| Tests automatizados | Validación manual | 3 tests automatizados, 3 aprobados | `backend/test/validators.test.js` |
+| Lint | Sin control integrado documentado | 0 errores y 53 advertencias visibles | CircleCI y ESLint |
+| Build | Sin pipeline documentado | Build frontend y raíz exitosos | Scripts npm y CircleCI |
+| Artefactos | No documentados | `frontend/dist` almacenado por CircleCI | `store_artifacts` |
+| Pull Requests | Sin plantilla específica | Plantilla con pruebas, riesgos y checklist | `.github/pull_request_template.md` |
+| Despliegue | Instrucciones manuales/locales | Railway configurado con build, start y healthcheck | `railway.json` |
+
+Los indicadores que requieren historial de GitHub, CircleCI o Railway deben completarse después de contar con ejecuciones reales en esas plataformas. No se inventan valores para esos indicadores.
+
 ## Integrantes
 
 *   Valentino Borchichi
