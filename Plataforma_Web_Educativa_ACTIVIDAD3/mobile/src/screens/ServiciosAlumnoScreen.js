@@ -1,14 +1,27 @@
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Button, SectionList, StyleSheet, Text, View } from 'react-native';
-import { API_URL } from '../config';
 
 // HU4: deportes (máximo 2, RF-06) y transporte (RF-09) vigentes del alumno.
-// Parámetros de navegación: { alumnoId, token }.
+// Parámetros de navegación: { alumnoId }.
 
 const MAX_DEPORTES = 2;
 
+// Simula un GET mientras se desarrolla el endpoint de servicios del alumno.
+async function obtenerServicios(alumnoId) {
+  await new Promise((resolve) => setTimeout(resolve, 600));
+  return {
+    alumno: { id: alumnoId, nombre: 'Alex', apellido: 'Alumno' },
+    deportes: [
+      { id: 1, nombre: 'Fútbol', horario: 'Lunes y miércoles · 16:00' },
+      { id: 2, nombre: 'Natación', horario: 'Martes · 15:00' },
+      { id: 3, nombre: 'Vóley', horario: 'Viernes · 17:00' },
+    ],
+    transporte: { id: 1, nombre: 'Transporte escolar', numero_recorrido: 4, hora_salida: '07:15' },
+  };
+}
+
 export default function ServiciosAlumnoScreen({ route }) {
-  const { alumnoId, token } = route.params;
+  const { alumnoId } = route.params;
   const [datos, setDatos] = useState(null);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState('');
@@ -18,21 +31,12 @@ export default function ServiciosAlumnoScreen({ route }) {
     let cancelado = false;
     setCargando(true);
     setError('');
-    fetch(`${API_URL}/api/inscripciones/${alumnoId}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then(async (res) => {
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.message || 'No se pudieron cargar los servicios');
-        return data;
-      })
+    obtenerServicios(alumnoId)
       .then((data) => {
-        if (!cancelado) setDatos(data);
+        if (!cancelado) setDatos({ ...data, deportes: (data.deportes || []).slice(0, MAX_DEPORTES) });
       })
       .catch((e) => {
-        if (!cancelado) {
-          setError(e instanceof TypeError ? 'No se pudo conectar con el servidor' : e.message);
-        }
+        if (!cancelado) setError(e.message || 'No se pudieron cargar los servicios');
       })
       .finally(() => {
         if (!cancelado) setCargando(false);
@@ -40,7 +44,7 @@ export default function ServiciosAlumnoScreen({ route }) {
     return () => {
       cancelado = true;
     };
-  }, [alumnoId, token, intento]);
+  }, [alumnoId, intento]);
 
   if (cargando) {
     return <ActivityIndicator style={styles.centro} size="large" />;
