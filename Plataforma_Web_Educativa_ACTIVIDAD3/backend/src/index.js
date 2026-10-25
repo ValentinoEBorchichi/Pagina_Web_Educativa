@@ -1,3 +1,6 @@
+// Carga las variables de backend antes de importar la aplicación y las conexiones.
+require('dotenv').config();
+
 const app = require('./app');
 const db = require('./config/database');
 const { getPool } = require('./config/db');

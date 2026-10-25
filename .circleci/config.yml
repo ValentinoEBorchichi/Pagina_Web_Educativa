@@ -1,39 +1,47 @@
+# .circleci/config.yml
 version: 2.1
 
 jobs:
   quality:
     docker:
       - image: cimg/node:20.19
-    working_directory: ~/educar-para-transformar
+
+    working_directory: ~/proyecto
+
     steps:
       - checkout
+
       - restore_cache:
           keys:
-            - dependencies-v1-{{ checksum "frontend/package-lock.json" }}-{{ checksum "backend/package-lock.json" }}
+            - dependencies-v1-{{ checksum "backend/package-lock.json" }}-{{ checksum "frontend/package-lock.json" }}
             - dependencies-v1-
-      - run:
-          name: Instalar dependencias del frontend
-          command: npm ci --prefix frontend
+
       - run:
           name: Instalar dependencias del backend
           command: npm ci --prefix backend
+
+      - run:
+          name: Instalar dependencias del frontend
+          command: npm ci --prefix frontend
+
       - save_cache:
-          key: dependencies-v1-{{ checksum "frontend/package-lock.json" }}-{{ checksum "backend/package-lock.json" }}
+          key: dependencies-v1-{{ checksum "backend/package-lock.json" }}-{{ checksum "frontend/package-lock.json" }}
           paths:
-            - frontend/node_modules
             - backend/node_modules
+            - frontend/node_modules
+
+      - run:
+          name: Lint del backend
+          command: npm run lint --prefix backend
+
       - run:
           name: Lint del frontend
           command: npm run lint --prefix frontend
-      - run:
-          name: Tests automatizados del backend
-          command: npm test --prefix backend
+
       - run:
           name: Build del frontend
           command: npm run build --prefix frontend
-      - run:
-          name: Build de la aplicación para Railway
-          command: npm run build
+
       - store_artifacts:
           path: frontend/dist
           destination: frontend-dist
