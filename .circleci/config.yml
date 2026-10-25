@@ -17,11 +17,11 @@ jobs:
 
       - run:
           name: Instalar dependencias del backend
-          command: npm ci --prefix Plataforma_Web_Educativa_ACTIVIDAD3/backend
+          command: npm ci --legacy-peer-deps --prefix Plataforma_Web_Educativa_ACTIVIDAD3/backend
 
       - run:
           name: Instalar dependencias del frontend
-          command: npm ci --prefix Plataforma_Web_Educativa_ACTIVIDAD3/frontend
+          command: npm ci --legacy-peer-deps --prefix Plataforma_Web_Educativa_ACTIVIDAD3/frontend
 
       - save_cache:
           key: dependencies-v1-{{ checksum "Plataforma_Web_Educativa_ACTIVIDAD3/backend/package-lock.json" }}-{{ checksum "Plataforma_Web_Educativa_ACTIVIDAD3/frontend/package-lock.json" }}
