@@ -1,4 +1,3 @@
-# .circleci/config.yml
 version: 2.1
 
 jobs:
@@ -13,37 +12,37 @@ jobs:
 
       - restore_cache:
           keys:
-            - dependencies-v1-{{ checksum "backend/package-lock.json" }}-{{ checksum "frontend/package-lock.json" }}
+            - dependencies-v1-{{ checksum "Plataforma_Web_Educativa_ACTIVIDAD3/backend/package-lock.json" }}-{{ checksum "Plataforma_Web_Educativa_ACTIVIDAD3/frontend/package-lock.json" }}
             - dependencies-v1-
 
       - run:
           name: Instalar dependencias del backend
-          command: npm ci --prefix backend
+          command: npm ci --prefix Plataforma_Web_Educativa_ACTIVIDAD3/backend
 
       - run:
           name: Instalar dependencias del frontend
-          command: npm ci --prefix frontend
+          command: npm ci --prefix Plataforma_Web_Educativa_ACTIVIDAD3/frontend
 
       - save_cache:
-          key: dependencies-v1-{{ checksum "backend/package-lock.json" }}-{{ checksum "frontend/package-lock.json" }}
+          key: dependencies-v1-{{ checksum "Plataforma_Web_Educativa_ACTIVIDAD3/backend/package-lock.json" }}-{{ checksum "Plataforma_Web_Educativa_ACTIVIDAD3/frontend/package-lock.json" }}
           paths:
-            - backend/node_modules
-            - frontend/node_modules
+            - Plataforma_Web_Educativa_ACTIVIDAD3/backend/node_modules
+            - Plataforma_Web_Educativa_ACTIVIDAD3/frontend/node_modules
 
       - run:
           name: Lint del backend
-          command: npm run lint --prefix backend
+          command: npm run lint --prefix Plataforma_Web_Educativa_ACTIVIDAD3/backend
 
       - run:
           name: Lint del frontend
-          command: npm run lint --prefix frontend
+          command: npm run lint --prefix Plataforma_Web_Educativa_ACTIVIDAD3/frontend
 
       - run:
           name: Build del frontend
-          command: npm run build --prefix frontend
+          command: npm run build --prefix Plataforma_Web_Educativa_ACTIVIDAD3/frontend
 
       - store_artifacts:
-          path: frontend/dist
+          path: Plataforma_Web_Educativa_ACTIVIDAD3/frontend/dist
           destination: frontend-dist
 
 workflows:
