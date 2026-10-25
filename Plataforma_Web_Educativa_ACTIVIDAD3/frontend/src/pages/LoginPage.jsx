@@ -152,6 +152,8 @@ const LoginPage = () => {
                         <label style={{ display: 'block', marginBottom: '8px', fontWeight: '800', fontSize: '0.85rem', color: 'var(--text-sm)', textTransform: 'uppercase' }}>Usuario</label>
                         <input
                             type="text"
+                            name="username"
+                            id="username"
                             value={username}
                             onChange={(e) => { setUsername(e.target.value); if (errors.username) setErrors((p) => ({ ...p, username: validarCampo('username', e.target.value) })); }}
                             onBlur={(e) => setErrors((p) => ({ ...p, username: validarCampo('username', e.target.value) }))}
@@ -164,6 +166,8 @@ const LoginPage = () => {
                         <label style={{ display: 'block', marginBottom: '8px', fontWeight: '800', fontSize: '0.85rem', color: 'var(--text-sm)', textTransform: 'uppercase' }}>Contraseña</label>
                         <input
                             type="password"
+                            name="password"
+                            id="password"
                             value={password}
                             onChange={(e) => { setPassword(e.target.value); if (errors.password) setErrors((p) => ({ ...p, password: validarCampo('password', e.target.value) })); }}
                             onBlur={(e) => setErrors((p) => ({ ...p, password: validarCampo('password', e.target.value) }))}
