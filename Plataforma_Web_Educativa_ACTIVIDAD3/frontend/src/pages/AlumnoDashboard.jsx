@@ -109,6 +109,12 @@ const AlumnoDashboard = () => {
         if (response.ok) fetchActividades();
     };
 
+    const cancelarDeporte = async (deporteId) => {
+        const response = await apiFetch(`${API_URL}/api/deportes/desinscribir/${deporteId}`, { method: 'DELETE' });
+        if (response.ok) fetchActividades();
+        else alert('No se pudo cancelar la inscripción al deporte.');
+    };
+
     return (
         <DashboardLayout title="Panel del Alumno">
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '24px' }}>
@@ -167,8 +173,8 @@ const AlumnoDashboard = () => {
                                         <p style={{ fontWeight: 800, fontSize: '1rem', color: 'var(--text)', marginTop: '10px' }}>{a.nombre}</p>
                                         <p style={{ fontSize: '0.8rem', color: 'var(--text-sm)', marginBottom: '12px' }}>{a.horario || 'Horario a confirmar'}</p>
                                         {inscripto && a.tipo === 'Deporte' ? (
-                                            <button disabled className="btn btn-hero-outline" style={{ width: '100%', fontSize: '0.8rem', color: 'var(--green)', borderColor: 'var(--green)', cursor: 'default' }}>
-                                                ✓ Inscripto
+                                            <button onClick={() => cancelarDeporte(a.id)} className="btn btn-hero-outline" style={{ width: '100%', fontSize: '0.8rem', color: '#dc2626', borderColor: '#dc2626' }}>
+                                                ✓ Inscripto — Darme de baja
                                             </button>
                                         ) : inscripto ? (
                                             <button onClick={() => cancelarInscripcion(a.id)} className="btn btn-hero-outline" style={{ width: '100%', fontSize: '0.8rem', color: '#dc2626', borderColor: '#dc2626' }}>

@@ -193,3 +193,30 @@ exports.misInscripciones = async (req, res) => {
         manejarErrorMssql(res, err);
     }
 };
+
+// DELETE /api/deportes/desinscribir/:deporte_id
+// Un alumno solo puede cancelar sus propias inscripciones.
+exports.desinscribir = async (req, res) => {
+    const deporteId = Number(req.params.deporte_id);
+    if (!esIdValido(deporteId)) {
+        return error(res, 400, 'DATOS_INVALIDOS', 'deporte_id debe ser un número entero positivo');
+    }
+
+    try {
+        const pool = await getPool();
+        const { rowsAffected } = await pool.request()
+            .input('usuario', sql.Int, req.user.id)
+            .input('deporte', sql.Int, deporteId)
+            .query(`DELETE FROM Inscripciones_Deportes
+                    WHERE alumno_id = (SELECT id FROM Alumnos WHERE usuario_id = @usuario)
+                      AND deporte_id = @deporte`);
+
+        if (!rowsAffected[0]) {
+            return error(res, 404, 'INSCRIPCION_NO_ENCONTRADA', 'No estás inscripto en ese deporte');
+        }
+
+        res.json({ message: 'Te diste de baja del deporte correctamente' });
+    } catch (err) {
+        manejarErrorMssql(res, err);
+    }
+};
