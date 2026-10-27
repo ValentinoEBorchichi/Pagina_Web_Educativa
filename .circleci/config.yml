@@ -38,6 +38,10 @@ jobs:
           command: npm run lint --prefix Plataforma_Web_Educativa_ACTIVIDAD3/frontend
 
       - run:
+          name: Tests automatizados del backend
+          command: npm test --prefix Plataforma_Web_Educativa_ACTIVIDAD3/backend
+
+      - run:
           name: Build del frontend
           command: npm run build --prefix Plataforma_Web_Educativa_ACTIVIDAD3/frontend
 
