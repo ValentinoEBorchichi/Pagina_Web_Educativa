@@ -490,7 +490,7 @@ npm run android   # requiere un emulador de Android o la app Expo Go
 
 ## Integración continua y calidad
 
-La integración continua se implementa con CircleCI mediante el archivo `.circleci/config.yml` ubicado en la raíz del repositorio. En cada ejecución se realiza checkout del repositorio, instalación reproducible de dependencias con `npm ci`, lint del frontend, tests automatizados del backend, build del frontend y almacenamiento de `frontend/dist` como artefacto. El despliegue público actual se realiza mediante Render.
+La integración continua se implementa con CircleCI mediante el archivo `.circleci/config.yml` ubicado en la raíz del repositorio. En cada ejecución se realiza checkout del repositorio, instalación reproducible de dependencias con `npm ci`, lint del frontend, tests automatizados del backend, build del frontend, prueba E2E con Cypress y almacenamiento de `frontend/dist` como artefacto. El despliegue público actual se realiza mediante Render.
 
 La validación automatizada del backend utiliza Node Test Runner y cubre la validación de nombres en `backend/test/validators.test.js`: acepta nombres con letras, espacios y signos habituales, rechaza números o símbolos no permitidos y controla espacios externos. El frontend dispone de ESLint; las advertencias existentes se informan sin bloquear el pipeline para no ocultar deuda técnica.
 
@@ -512,6 +512,10 @@ No se informan como métricas propias del proyecto valores de duración, frecuen
 
 El repositorio utiliza GitHub como repositorio remoto, con rama principal `main` y commits descriptivos. La plantilla `.github/pull_request_template.md` solicita descripción, problema resuelto, pruebas, lint, build, riesgos, actualización de documentación y revisión de secretos. También se agregaron plantillas para reportes de errores y solicitudes de mejora. No se afirma que la protección de `main` esté activa porque no fue verificada.
 
+### Hooks y análisis de calidad
+
+Husky está preparado en `Plataforma_Web_Educativa_ACTIVIDAD3/package.json`. El hook `.husky/pre-commit` ejecuta los tests del backend y el lint de backend y frontend antes de permitir un commit. La configuración `sonar-project.properties` deja definidos los fuentes, tests y exclusiones para SonarQube o SonarCloud; la ejecución contra una cuenta externa requiere configurar el token y la organización correspondientes.
+
 ### Despliegue y variables de entorno
 
 El despliegue público actual se realiza en Render, que ejecuta `npm start`, expone el servicio web y permite revisar los logs del despliegue. El archivo `railway.json` conserva la configuración alternativa para Railway. Las credenciales de SQL Server y `JWT_SECRET` se parametrizan con archivos `.env` locales y variables del servicio; los secretos no deben incluirse en Git.
@@ -529,8 +533,8 @@ El despliegue público actual se realiza en Render, que ejecuta `npm start`, exp
 | Integración de repositorios con CI/CD | Aplicado | GitHub activa ejecuciones exitosas de CircleCI ante nuevos pushes. |
 | Pull Requests y Merge Requests | Aplicado parcialmente | Plantilla de PR y revisión documentada; no se verificó una política obligatoria de aprobación. |
 | Issues | Disponible | GitHub Issues está habilitado; no hay issues abiertos al verificar. |
-| Wikis | No aplicado | La wiki del repositorio está deshabilitada. |
-| Tablero Kanban | No corroborado | GitHub indica soporte de Projects, pero no se encontró un tablero accesible mediante la API consultada. |
+| Wikis | Aplicado | Wiki del repositorio con documentación del sistema, roles, tecnologías, variables, pruebas y despliegue. |
+| Tablero Kanban | Aplicado | GitHub Projects con flujo Kanban y tareas del proyecto. |
 | Codacy | Aplicado | El README contiene badge y enlace al análisis del repositorio. |
 
 ## Consigna 3 Contenidos no aplicados
@@ -541,7 +545,7 @@ Se seleccionan Integración Continua y Gestión de Artefactos porque reducen el 
 
 ### 3.b Aplicación realizada
 
-La Integración Continua se aplicó con CircleCI y un pipeline reproducible que ejecuta lint, tests y builds sobre cada cambio procesado. La Gestión de Artefactos se aplicó almacenando `frontend/dist` al finalizar el pipeline. Además, se agregó una plantilla de Pull Request para documentar pruebas, riesgos y revisión de código.
+La Integración Continua se aplicó con CircleCI y un pipeline reproducible que ejecuta lint, tests, build y una prueba E2E de Cypress sobre cada cambio procesado. La Gestión de Artefactos se aplicó almacenando `frontend/dist` al finalizar el pipeline. Además, se agregó una plantilla de Pull Request para documentar pruebas, riesgos y revisión de código.
 
 ## Consigna 4 Métricas de productividad
 

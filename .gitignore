@@ -11,3 +11,6 @@ node_modules/
 
 # Configuración local de herramientas
 .claude/
+
+# Archivos generados por Husky
+.husky/_/

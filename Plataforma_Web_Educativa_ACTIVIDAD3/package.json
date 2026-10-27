@@ -4,10 +4,14 @@
   "description": "Plataforma Web Educativa - servicio único (Express sirve la API y el frontend compilado)",
   "private": true,
   "scripts": {
+    "prepare": "cd .. && node Plataforma_Web_Educativa_ACTIVIDAD3/node_modules/husky/bin.js",
     "build": "npm install --legacy-peer-deps --prefix frontend && npm run build --prefix frontend && npm install --legacy-peer-deps --prefix backend",
     "start": "npm start --prefix backend"
   },
   "engines": {
     "node": ">=20.19"
+  },
+  "devDependencies": {
+    "husky": "^9.1.7"
   }
 }

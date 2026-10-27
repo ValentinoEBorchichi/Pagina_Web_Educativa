@@ -1,0 +1,10 @@
+#!/usr/bin/env sh
+
+set -e
+
+echo "Ejecutando validaciones previas al commit..."
+npm test --prefix Plataforma_Web_Educativa_ACTIVIDAD3/backend
+npm run lint --prefix Plataforma_Web_Educativa_ACTIVIDAD3/backend
+npm run lint --prefix Plataforma_Web_Educativa_ACTIVIDAD3/frontend
+
+echo "Validaciones pre-commit correctas."
