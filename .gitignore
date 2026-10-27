@@ -8,3 +8,6 @@ node_modules/
 
 # Caché local de Visual Studio
 .vs/
+
+# Configuración local de herramientas
+.claude/
