@@ -45,6 +45,23 @@ jobs:
           name: Build del frontend
           command: npm run build --prefix Plataforma_Web_Educativa_ACTIVIDAD3/frontend
 
+      - store_artifacts:
+          path: Plataforma_Web_Educativa_ACTIVIDAD3/frontend/dist
+          destination: frontend-dist
+
+  e2e:
+    docker:
+      - image: cypress/included:16.2.0
+
+    working_directory: ~/proyecto
+
+    steps:
+      - checkout
+
+      - run:
+          name: Instalar dependencias del frontend
+          command: npm ci --legacy-peer-deps --prefix Plataforma_Web_Educativa_ACTIVIDAD3/frontend
+
       - run:
           name: Prueba E2E con Cypress
           command: |
@@ -64,11 +81,8 @@ jobs:
             cat /tmp/ept-frontend.log
             exit 1
 
-      - store_artifacts:
-          path: Plataforma_Web_Educativa_ACTIVIDAD3/frontend/dist
-          destination: frontend-dist
-
 workflows:
   quality_checks:
     jobs:
       - quality
+      - e2e
