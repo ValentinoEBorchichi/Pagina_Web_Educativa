@@ -70,7 +70,7 @@ jobs:
             trap 'kill "$FRONTEND_PID" 2>/dev/null || true' EXIT
 
             for i in $(seq 1 30); do
-              if curl --noproxy '*' -fsS http://127.0.0.1:5173 >/dev/null; then
+              if node -e "fetch('http://127.0.0.1:5173').then(response => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"; then
                 cd Plataforma_Web_Educativa_ACTIVIDAD3/frontend
                 npx cypress run --browser electron
                 exit $?
