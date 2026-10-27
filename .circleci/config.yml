@@ -46,24 +46,23 @@ jobs:
           command: npm run build --prefix Plataforma_Web_Educativa_ACTIVIDAD3/frontend
 
       - run:
-          name: Iniciar frontend para pruebas E2E
-          command: npm run dev --prefix Plataforma_Web_Educativa_ACTIVIDAD3/frontend -- --host 0.0.0.0 > /tmp/ept-frontend.log 2>&1 &
-
-      - run:
-          name: Esperar frontend de pruebas
+          name: Prueba E2E con Cypress
           command: |
+            npm run dev --prefix Plataforma_Web_Educativa_ACTIVIDAD3/frontend -- --host 0.0.0.0 > /tmp/ept-frontend.log 2>&1 &
+            FRONTEND_PID=$!
+            trap 'kill "$FRONTEND_PID" 2>/dev/null || true' EXIT
+
             for i in $(seq 1 30); do
-              if curl -fsS http://localhost:5173 >/dev/null; then
-                exit 0
+              if curl --noproxy '*' -fsS http://127.0.0.1:5173 >/dev/null; then
+                cd Plataforma_Web_Educativa_ACTIVIDAD3/frontend
+                npx cypress run --browser electron
+                exit $?
               fi
               sleep 1
             done
+
             cat /tmp/ept-frontend.log
             exit 1
-
-      - run:
-          name: Prueba E2E con Cypress
-          command: cd Plataforma_Web_Educativa_ACTIVIDAD3/frontend && npx cypress run --browser electron
 
       - store_artifacts:
           path: Plataforma_Web_Educativa_ACTIVIDAD3/frontend/dist
