@@ -4,6 +4,7 @@ require('dotenv').config();
 const app = require('./app');
 const db = require('./config/database');
 const { getPool } = require('./config/db');
+const { iniciarFacturacionProgramada } = require('./jobs/facturacion.job');
 
 const PORT = process.env.PORT || 3000;
 
@@ -23,6 +24,16 @@ if (process.env.SEED_ON_BOOT === 'true') {
 // configurado (los módulos en SQLite siguen funcionando aunque falle).
 getPool().catch((err) => console.error('No se pudo conectar a SQL Server:', err.message));
 
-app.listen(PORT, () => {
+const tareaFacturacion = iniciarFacturacionProgramada();
+
+const server = app.listen(PORT, () => {
     console.log(`Servidor corriendo en el puerto ${PORT}`);
 });
+
+function apagar() {
+    tareaFacturacion.stop();
+    server.close(() => process.exit(0));
+}
+
+process.once('SIGTERM', apagar);
+process.once('SIGINT', apagar);
