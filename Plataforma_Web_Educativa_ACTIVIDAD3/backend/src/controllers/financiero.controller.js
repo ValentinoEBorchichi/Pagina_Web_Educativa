@@ -1,8 +1,135 @@
 const db = require('../config/database');
 const { sql, getPool } = require('../config/db');
 const PDFDocument = require('pdfkit');
+const crypto = require('crypto');
+const fs = require('fs/promises');
+const path = require('path');
 const { NOMBRE_REGEX } = require('../utils/validators');
 const { manejarErrorSQL, manejarErrorMssql } = require('../utils/dbErrors');
+
+const COMPROBANTES_DIR = path.resolve(
+    __dirname,
+    '../../',
+    process.env.COMPROBANTES_DIR || 'uploads/comprobantes'
+);
+
+const extensionesComprobante = new Set(['jpg', 'jpeg', 'png', 'pdf']);
+
+function respuestaErrorComprobante(res, status, message) {
+    return res.status(status).json({ message });
+}
+
+// Recibe, calcula SHA-256, evita duplicados y registra el comprobante en SQL Server.
+exports.subirComprobante = async (req, res) => {
+    const facturaId = Number.parseInt(req.body.factura_id, 10);
+    const monto = Number(req.body.monto);
+    const fechaTransferencia = req.body.fecha_transferencia;
+    const archivo = req.file;
+
+    if (!Number.isInteger(facturaId) || facturaId <= 0) {
+        return respuestaErrorComprobante(res, 400, 'factura_id inválido');
+    }
+
+    if (!archivo) {
+        return respuestaErrorComprobante(res, 400, 'Debe enviar el archivo en el campo archivo');
+    }
+
+    if (!Number.isFinite(monto) || monto <= 0) {
+        return respuestaErrorComprobante(res, 400, 'El monto debe ser mayor que cero');
+    }
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(fechaTransferencia || ''))) {
+        return respuestaErrorComprobante(res, 400, 'fecha_transferencia debe tener formato YYYY-MM-DD');
+    }
+
+    const extension = path.extname(archivo.originalname).slice(1).toLowerCase();
+    if (!extensionesComprobante.has(extension)) {
+        return respuestaErrorComprobante(res, 400, 'Extensión de archivo no permitida');
+    }
+
+    const hashArchivo = crypto
+        .createHash('sha256')
+        .update(archivo.buffer)
+        .digest('hex');
+
+    let destino;
+
+    try {
+        const pool = await getPool();
+        const acceso = await pool.request()
+            .input('facturaId', sql.Int, facturaId)
+            .input('usuarioId', sql.Int, req.user.id)
+            .input('rol', sql.VarChar(20), req.user.rol)
+            .query(`
+                SELECT f.id
+                FROM dbo.Factura f
+                INNER JOIN dbo.Alumnos a ON a.id = f.alumno_id
+                WHERE f.id = @facturaId
+                  AND (
+                      @rol = 'admin'
+                      OR (@rol = 'alumno' AND a.usuario_id = @usuarioId)
+                      OR (@rol = 'padre' AND a.padre_id = @usuarioId)
+                  )
+            `);
+
+        if (!acceso.recordset.length) {
+            return respuestaErrorComprobante(res, 404, 'Factura inexistente o sin permisos');
+        }
+
+        const duplicado = await pool.request()
+            .input('hashArchivo', sql.VarChar(128), hashArchivo)
+            .query(`
+                SELECT TOP 1 id
+                FROM dbo.ComprobanteTransferencia
+                WHERE hash_archivo = @hashArchivo
+            `);
+
+        if (duplicado.recordset.length) {
+            return respuestaErrorComprobante(res, 409, 'El archivo ya fue cargado anteriormente');
+        }
+
+        await fs.mkdir(COMPROBANTES_DIR, { recursive: true });
+        const nombreGuardado = `${crypto.randomUUID()}.${extension}`;
+        destino = path.join(COMPROBANTES_DIR, nombreGuardado);
+        await fs.writeFile(destino, archivo.buffer, { flag: 'wx' });
+
+        const insertado = await pool.request()
+            .input('facturaId', sql.Int, facturaId)
+            .input('nombreArchivo', sql.NVarChar(255), archivo.originalname)
+            .input('rutaArchivo', sql.NVarChar(500), destino)
+            .input('tipoMime', sql.VarChar(100), archivo.mimetype)
+            .input('tamanoBytes', sql.BigInt, archivo.size)
+            .input('monto', sql.Decimal(12, 2), monto)
+            .input('fechaTransferencia', sql.Date, fechaTransferencia)
+            .input('hashArchivo', sql.VarChar(128), hashArchivo)
+            .query(`
+                INSERT INTO dbo.ComprobanteTransferencia
+                    (factura_id, nombre_archivo, ruta_archivo, tipo_mime,
+                     tamano_bytes, monto, fecha_transferencia, hash_archivo,
+                     estado_verificacion)
+                OUTPUT INSERTED.id, INSERTED.factura_id, INSERTED.nombre_archivo,
+                       INSERTED.monto, INSERTED.fecha_transferencia,
+                       INSERTED.hash_archivo, INSERTED.estado_verificacion
+                VALUES
+                    (@facturaId, @nombreArchivo, @rutaArchivo, @tipoMime,
+                     @tamanoBytes, @monto, @fechaTransferencia, @hashArchivo,
+                     'Pendiente')
+            `);
+
+        return res.status(201).json({
+            message: 'Comprobante cargado correctamente',
+            comprobante: insertado.recordset[0]
+        });
+    } catch (err) {
+        if (destino) await fs.unlink(destino).catch(() => undefined);
+
+        if (err.number === 2627 || err.number === 2601) {
+            return respuestaErrorComprobante(res, 409, 'El archivo ya fue cargado anteriormente');
+        }
+
+        return manejarErrorMssql(res, err);
+    }
+};
 
 // --- PERSONAL ---
 exports.getPersonal = (req, res) => {
