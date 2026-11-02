@@ -1,3 +1,4 @@
+---
 # La migración usa sintaxis específica de Microsoft SQL Server (USE, GO,
 # SET y sys.*), que el analizador SQL genérico de Codacy no interpreta.
 # Se mantiene el archivo en el repositorio y se valida manualmente en SSMS.
