@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ActivityIndicator, Button, StyleSheet, Text, TextInput, View } from 'react-native';
-import { API_URL, SIMULAR_RECUPERACION } from '../config';
+import { apiUrl, SIMULAR_RECUPERACION } from '../config';
 
 // HU2: el padre ingresa su DNI y el backend le envía por correo el token de recuperación.
 
@@ -12,7 +12,7 @@ async function solicitarRecuperacion(dni) {
     await new Promise((resolve) => setTimeout(resolve, 800));
     return { message: MENSAJE_ENVIADO };
   }
-  const res = await fetch(`${API_URL}/api/auth/recuperar-password`, {
+  const res = await fetch(apiUrl('/api/auth/recuperar-password'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ dni }),

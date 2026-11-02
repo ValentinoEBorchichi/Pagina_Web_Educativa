@@ -28,6 +28,7 @@ const AdminDashboard = () => {
     const [rutasTransporte, setRutasTransporte] = useState([]);
     const [cuotasConfig, setCuotasConfig] = useState([]);
     const [reportesStats, setReportesStats] = useState(null);
+    const [reportesFinancieros, setReportesFinancieros] = useState(null);
     const [materias, setMaterias] = useState([]);
     const [actividades, setActividades] = useState([]);
     const [horarios, setHorarios] = useState([]);
@@ -46,7 +47,7 @@ const AdminDashboard = () => {
         if (activeTab === 'personal') fetchPersonal();
         if (activeTab === 'finanzas') { fetchFinanzas(); fetchNiveles(); fetchAlumnos(); fetchPagos(); }
         if (activeTab === 'servicios') { fetchServicios(); fetchAlumnos(); }
-        if (activeTab === 'reportes') fetchReportesStats();
+        if (activeTab === 'reportes') { fetchReportesStats(); fetchReportesFinancieros(); }
         if (activeTab === 'usuarios') fetchUsuarios();
     }, [activeTab]);
 
@@ -219,6 +220,13 @@ const AdminDashboard = () => {
             const response = await apiFetch(`${API_URL}/api/comunicacion/reportes/stats`);
             if (response.ok) setReportesStats(await response.json());
         } catch (error) { console.error(error); }
+    };
+
+    const fetchReportesFinancieros = async () => {
+        try {
+            const response = await apiFetch(`${API_URL}/api/movil/reportes-financieros`);
+            if (response.ok) setReportesFinancieros(await response.json());
+        } catch (error) { console.error('Error reporte financiero:', error); }
     };
 
     const exportCSV = (filename, headers, rows) => {
@@ -1504,7 +1512,30 @@ const AdminDashboard = () => {
                                 </div>
                             </div>
                         )}
-                        <button onClick={fetchReportesStats} className="btn btn-hero-outline" style={{ fontSize: '0.75rem', color: 'var(--blue)', borderColor: 'var(--blue)', marginTop: '16px' }}>🔄 Refrescar</button>
+                        <button onClick={() => { fetchReportesStats(); fetchReportesFinancieros(); }} className="btn btn-hero-outline" style={{ fontSize: '0.75rem', color: 'var(--blue)', borderColor: 'var(--blue)', marginTop: '16px' }}>🔄 Refrescar</button>
+                    </div>
+
+                    <div style={{ gridColumn: '1 / -1', background: 'var(--white)', padding: '24px', borderRadius: 'var(--radius)', boxShadow: 'var(--shadow-sm)', overflowX: 'auto' }}>
+                        <h2 style={{ fontSize: '1.1rem', color: 'var(--blue)', fontWeight: 800, marginBottom: '16px' }}>📊 Finanzas por servicio</h2>
+                        {!reportesFinancieros ? <p style={{ color: '#64748b' }}>Cargando datos financieros…</p> : <>
+                            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', marginBottom: '24px' }}>
+                                <thead><tr style={{ borderBottom: '2px solid #f1f5f9' }}><th style={thStyle}>Deporte / transporte</th><th style={thStyle}>Facturado</th><th style={thStyle}>Ingresos</th></tr></thead>
+                                <tbody>{(reportesFinancieros.por_servicio || []).filter(r => ['deporte', 'transporte'].includes(r.servicio)).map(r => <tr key={r.servicio} style={{ borderBottom: '1px solid #f1f5f9' }}><td style={tdStyle}>{r.servicio}</td><td style={tdStyle}>${Number(r.facturado || 0).toFixed(2)}</td><td style={tdStyle}>${Number(r.ingresos || 0).toFixed(2)}</td></tr>)}
+                                    {!(reportesFinancieros.por_servicio || []).some(r => ['deporte', 'transporte'].includes(r.servicio)) && <tr><td colSpan="3" style={{ padding: 16, color: '#64748b' }}>Todavía no hay cargos de deporte o transporte.</td></tr>}</tbody>
+                            </table>
+                            <h3 style={{ color: 'var(--blue)', marginBottom: 12 }}>Morosos</h3>
+                            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', marginBottom: '24px' }}>
+                                <thead><tr style={{ borderBottom: '2px solid #f1f5f9' }}><th style={thStyle}>Alumno</th><th style={thStyle}>Deuda pendiente</th></tr></thead>
+                                <tbody>{(reportesFinancieros.morosos || []).map(r => <tr key={r.alumno_id} style={{ borderBottom: '1px solid #f1f5f9' }}><td style={tdStyle}>{r.apellido}, {r.nombre}</td><td style={tdStyle}>${Number(r.deuda || 0).toFixed(2)}</td></tr>)}
+                                    {!(reportesFinancieros.morosos || []).length && <tr><td colSpan="2" style={{ padding: 16, color: '#64748b' }}>No hay saldos pendientes.</td></tr>}</tbody>
+                            </table>
+                            <h3 style={{ color: 'var(--blue)', marginBottom: 12 }}>Facturas y pagos aplicados</h3>
+                            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                                <thead><tr style={{ borderBottom: '2px solid #f1f5f9' }}><th style={thStyle}>Fecha</th><th style={thStyle}>Alumno</th><th style={thStyle}>Estado</th><th style={thStyle}>Total</th><th style={thStyle}>Saldo</th></tr></thead>
+                                <tbody>{(reportesFinancieros.facturas || []).map(r => <tr key={r.factura_id} style={{ borderBottom: '1px solid #f1f5f9' }}><td style={tdStyle}>{new Date(r.fecha_emision).toLocaleDateString('es-AR')}</td><td style={tdStyle}>{r.apellido}, {r.nombre}</td><td style={tdStyle}>{r.estado}</td><td style={tdStyle}>${Number(r.total).toFixed(2)}</td><td style={tdStyle}>${Number(r.saldo).toFixed(2)}</td></tr>)}
+                                    {!(reportesFinancieros.facturas || []).length && <tr><td colSpan="5" style={{ padding: 16, color: '#64748b' }}>No hay facturas cargadas.</td></tr>}</tbody>
+                            </table>
+                        </>}
                     </div>
 
                     <div style={{ background: 'var(--white)', padding: '24px', borderRadius: 'var(--radius)', boxShadow: 'var(--shadow-sm)' }}>
