@@ -1,5 +1,6 @@
 const cron = require('node-cron');
 const { sql, getPool } = require('../config/db');
+const { generarFacturaPDF } = require('../services/facturaPdf.service');
 
 const CRON_EXPRESION = '0 2 * * *';
 const ZONA_HORARIA = process.env.TZ || 'America/Argentina/Buenos_Aires';
@@ -127,10 +128,6 @@ async function consultarConceptosAlumno(transaction, alumnoId, periodo) {
         `);
 }
 
-async function generarPdfFactura() {
-    // TODO: integrar PDFKit para generar y guardar el PDF de la factura.
-}
-
 async function generarFacturasDelPeriodo(fecha = new Date()) {
     if (!esUltimoDiaHabil(fecha)) {
         return { ejecutado: false, motivo: 'Hoy no es el último día hábil del mes', creadas: 0, duplicadas: 0 };
@@ -168,6 +165,18 @@ async function generarFacturasDelPeriodo(fecha = new Date()) {
                 0
             );
 
+            const datosAlumno = await transaction.request()
+                .input('alumnoId', sql.Int, alumno.id)
+                .query(`
+                    SELECT id, nombre, apellido, dni
+                    FROM dbo.Alumnos
+                    WHERE id = @alumnoId;
+                `);
+
+            if (!datosAlumno.recordset.length) {
+                throw new Error(`No se encontró el alumno ${alumno.id}`);
+            }
+
             const factura = await transaction.request()
                 .input('alumnoId', sql.Int, alumno.id)
                 .input('periodo', sql.Date, periodo)
@@ -197,7 +206,21 @@ async function generarFacturasDelPeriodo(fecha = new Date()) {
             await transaction.commit();
             iniciada = false;
             creadas += 1;
-            await generarPdfFactura(facturaId);
+
+            const facturaParaPdf = {
+                id: facturaId,
+                alumno_id: alumno.id,
+                periodo,
+                estado: 'Pendiente',
+                total
+            };
+            try {
+                await generarFacturaPDF(facturaParaPdf, conceptos.recordset, datosAlumno.recordset[0]);
+            } catch (pdfError) {
+                // La factura ya fue confirmada en SQL Server; el error del PDF
+                // se registra para reintentar su generación sin duplicar la factura.
+                console.error(`[facturacion] Error al generar PDF ${facturaId}:`, pdfError.message);
+            }
         } catch (error) {
             if (iniciada) await transaction.rollback().catch(() => undefined);
 
