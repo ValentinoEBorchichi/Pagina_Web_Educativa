@@ -456,6 +456,7 @@ El contrato completo, con rutas, parámetros, ejemplos de respuesta y códigos d
 | `POST` | `/api/auth/restablecer-password` | Público | Diseñado | Restablecimiento de la contraseña con el token recibido (HU2). |
 | `PUT` | `/api/auth/password` | Autenticado | Implementado | Cambio de contraseña con verificación de la actual y política de complejidad (HU2). |
 | `GET` | `/api/movil/alumnos/:alumnoId/inscripciones` | padre, admin | Implementado | Deportes, comedor y transporte; el padre queda limitado por su vínculo en SQL (HU4). |
+| `GET` | `/api/movil/mis-inscripciones` | padre | Implementado | Servicios de todos los hijos vinculados, obtenidos desde el usuario del JWT; usa una ruta fija en móvil (HU4). |
 | `GET` | `/api/movil/alumnos/:alumnoId/estado-cuenta` | padre, admin | Implementado | Facturas, detalle de cargos, saldos pendientes y total adeudado (HU6/HU9). |
 | `GET` | `/api/movil/reportes-financieros` | admin | Implementado | Ingresos estimados por servicio, morosos y listado de facturas (HU12). |
 | `GET` | `/api/financiero/alumnos/:alumnoId/cuotas` | padre, admin | Diseñado | Cuotas pendientes (filtro `estado`) y total adeudado. |

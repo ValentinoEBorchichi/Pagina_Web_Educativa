@@ -1,6 +1,44 @@
 const { sql, getPool } = require('../config/db');
 const { manejarErrorMssql } = require('../utils/dbErrors');
 
+exports.getMisInscripciones = async (req, res) => {
+    try {
+        const pool = await getPool();
+        const { recordset } = await pool.request()
+            .input('usuarioId', sql.Int, req.user.id)
+            .query(`
+                SELECT a.id AS alumno_id, a.nombre AS alumno_nombre, a.apellido AS alumno_apellido,
+                       a.usa_comedor, d.id AS deporte_id, d.nombre AS deporte,
+                       CONVERT(VARCHAR(5), d.hora_inicio, 108) AS hora_inicio,
+                       CONVERT(VARCHAR(5), d.hora_fin, 108) AS hora_fin,
+                       t.id AS transporte_id, t.numero_recorrido, t.nombre AS transporte,
+                       CONVERT(VARCHAR(5), t.hora_salida, 108) AS hora_salida
+                FROM dbo.Alumnos a
+                LEFT JOIN dbo.Inscripciones_Deportes i ON i.alumno_id = a.id
+                LEFT JOIN dbo.Deportes d ON d.id = i.deporte_id AND d.activo = 1
+                LEFT JOIN dbo.Transportes t ON t.id = a.transporte_id
+                WHERE a.padre_id = @usuarioId
+                ORDER BY a.apellido, a.nombre, d.nombre
+            `);
+        const alumnos = new Map();
+        for (const row of recordset) {
+            if (!alumnos.has(row.alumno_id)) alumnos.set(row.alumno_id, {
+                alumno: { id: row.alumno_id, nombre: row.alumno_nombre, apellido: row.alumno_apellido },
+                deportes: [], comedor: Boolean(row.usa_comedor),
+                transporte: row.transporte_id ? {
+                    id: row.transporte_id, nombre: row.transporte,
+                    numero_recorrido: row.numero_recorrido, hora_salida: row.hora_salida
+                } : null
+            });
+            if (row.deporte_id) alumnos.get(row.alumno_id).deportes.push({
+                id: row.deporte_id, nombre: row.deporte,
+                horario: `${row.hora_inicio}–${row.hora_fin}`
+            });
+        }
+        return res.json({ alumnos: [...alumnos.values()] });
+    } catch (err) { return manejarErrorMssql(res, err); }
+};
+
 // El vínculo se valida en SQL para que el padre solo lea la información de sus hijos.
 exports.getInscripcionesAlumno = async (req, res) => {
     const alumnoId = Number.parseInt(req.params.alumnoId, 10);

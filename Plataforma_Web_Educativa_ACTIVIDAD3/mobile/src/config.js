@@ -5,6 +5,7 @@ export const API_URL = 'http://192.168.1.78:3000';
 const API_PATHS = new Set([
   '/api/auth/password',
   '/api/auth/recuperar-password',
+  '/api/movil/mis-inscripciones',
 ]);
 const ALUMNO_RECURSOS = new Set(['inscripciones', 'estado-cuenta']);
 

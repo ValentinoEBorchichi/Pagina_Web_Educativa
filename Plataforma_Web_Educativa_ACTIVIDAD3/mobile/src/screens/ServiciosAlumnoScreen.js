@@ -8,12 +8,14 @@ import { apiUrl } from '../config';
 const MAX_DEPORTES = 2;
 
 async function obtenerServicios(alumnoId, token) {
-  const res = await fetch(apiUrl('inscripciones', alumnoId), {
+  const res = await fetch(apiUrl('/api/movil/mis-inscripciones'), {
     headers: { Authorization: `Bearer ${token}` },
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.message || 'No se pudieron cargar los servicios');
-  return data;
+  const alumno = (data.alumnos || []).find((item) => item.alumno.id === Number(alumnoId));
+  if (!alumno) throw new Error('No se encontraron servicios para este alumno');
+  return alumno;
 }
 
 export default function ServiciosAlumnoScreen({ route, navigation }) {
