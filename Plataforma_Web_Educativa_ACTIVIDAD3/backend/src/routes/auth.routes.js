@@ -6,6 +6,7 @@ const { requireAuth } = require('../config/auth');
 router.post('/registro', authController.registroFamiliar);
 router.post('/login', authController.login);
 router.get('/me', requireAuth(), authController.getMe);
+router.put('/password', requireAuth(), authController.cambiarPassword);
 router.get('/padres', requireAuth(), authController.getPadres);
 
 // Gestión de usuarios y roles (solo admin)

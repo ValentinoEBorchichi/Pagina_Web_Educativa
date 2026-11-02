@@ -3,6 +3,9 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { StatusBar } from 'expo-status-bar';
 import RecuperarPasswordScreen from './src/screens/RecuperarPasswordScreen';
 import ServiciosAlumnoScreen from './src/screens/ServiciosAlumnoScreen';
+import CuentaScreen from './src/screens/CuentaScreen';
+import { ComprobanteProvisorioScreen, HistorialScreen } from './src/screens/HistorialScreen';
+import CambiarPasswordScreen from './src/screens/CambiarPasswordScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -21,6 +24,10 @@ export default function App() {
           component={ServiciosAlumnoScreen}
           options={{ title: 'Servicios del alumno' }}
         />
+        <Stack.Screen name="Cuenta" component={CuentaScreen} options={{ title: 'Cuotas e historial' }} />
+        <Stack.Screen name="Historial" component={HistorialScreen} options={{ title: 'Historial de facturas' }} />
+        <Stack.Screen name="ComprobanteProvisorio" component={ComprobanteProvisorioScreen} options={{ title: 'Comprobante provisorio' }} />
+        <Stack.Screen name="CambiarPassword" component={CambiarPasswordScreen} options={{ title: 'Cambiar contraseña' }} />
       </Stack.Navigator>
       <StatusBar style="auto" />
     </NavigationContainer>

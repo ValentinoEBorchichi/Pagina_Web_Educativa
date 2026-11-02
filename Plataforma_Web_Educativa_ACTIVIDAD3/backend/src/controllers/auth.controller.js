@@ -148,6 +148,26 @@ exports.getMe = async (req, res) => {
     }
 };
 
+exports.cambiarPassword = async (req, res) => {
+    const actual = String(req.body.password_actual || '');
+    const nueva = String(req.body.password_nueva || '');
+    if (!actual || !nueva) return res.status(400).json({ message: 'Ingresá la contraseña actual y la nueva' });
+    const pwError = validarPassword(nueva);
+    if (pwError) return res.status(400).json({ message: pwError });
+    try {
+        const pool = await getPool();
+        const { recordset } = await pool.request().input('id', sql.Int, req.user.id)
+            .query('SELECT password_hash FROM dbo.Usuarios WHERE id = @id AND activo = 1');
+        if (!recordset[0] || !(await bcrypt.compare(actual, recordset[0].password_hash))) {
+            return res.status(400).json({ message: 'La contraseña actual no es correcta' });
+        }
+        const hash = await bcrypt.hash(nueva, 10);
+        await pool.request().input('id', sql.Int, req.user.id).input('hash', sql.VarChar(100), hash)
+            .query('UPDATE dbo.Usuarios SET password_hash = @hash WHERE id = @id');
+        return res.json({ message: 'Contraseña actualizada correctamente' });
+    } catch (err) { return manejarErrorMssql(res, err); }
+};
+
 exports.getPadres = async (req, res) => {
     try {
         const pool = await getPool();
