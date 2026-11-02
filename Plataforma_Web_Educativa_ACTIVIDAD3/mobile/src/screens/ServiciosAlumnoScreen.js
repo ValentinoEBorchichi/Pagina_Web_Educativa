@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Button, SectionList, StyleSheet, Text, View } from 'react-native';
-import { API_URL } from '../config';
+import { apiUrl } from '../config';
 
 // HU4: deportes (máximo 2, RF-06) y transporte (RF-09) vigentes del alumno.
 // Parámetros de navegación: { alumnoId }.
@@ -8,7 +8,7 @@ import { API_URL } from '../config';
 const MAX_DEPORTES = 2;
 
 async function obtenerServicios(alumnoId, token) {
-  const res = await fetch(`${API_URL}/api/movil/alumnos/${alumnoId}/inscripciones`, {
+  const res = await fetch(apiUrl('inscripciones', alumnoId), {
     headers: { Authorization: `Bearer ${token}` },
   });
   const data = await res.json().catch(() => ({}));

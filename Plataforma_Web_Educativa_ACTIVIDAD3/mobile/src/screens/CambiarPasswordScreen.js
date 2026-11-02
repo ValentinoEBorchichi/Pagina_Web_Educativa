@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ActivityIndicator, Button, StyleSheet, Text, TextInput, View } from 'react-native';
-import { API_URL } from '../config';
+import { apiUrl } from '../config';
 
 export default function CambiarPasswordScreen({ route }) {
   const [actual, setActual] = useState('');
@@ -14,7 +14,7 @@ export default function CambiarPasswordScreen({ route }) {
     if (nueva !== repetida) return setError('Las contraseñas nuevas no coinciden');
     setCargando(true);
     try {
-      const response = await fetch(`${API_URL}/api/auth/password`, {
+      const response = await fetch(apiUrl('/api/auth/password'), {
         method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${route.params.token}` },
         body: JSON.stringify({ password_actual: actual, password_nueva: nueva }),
       });

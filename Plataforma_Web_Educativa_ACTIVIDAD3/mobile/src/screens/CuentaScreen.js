@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Button, FlatList, StyleSheet, Text, View } from 'react-native';
-import { API_URL } from '../config';
+import { apiUrl } from '../config';
 
 export default function CuentaScreen({ route, navigation }) {
   const { alumnoId, token } = route.params;
@@ -11,7 +11,7 @@ export default function CuentaScreen({ route, navigation }) {
 
   useEffect(() => {
     let vigente = true;
-    fetch(`${API_URL}/api/movil/alumnos/${alumnoId}/estado-cuenta`, {
+    fetch(apiUrl('estado-cuenta', alumnoId), {
       headers: { Authorization: `Bearer ${token}` },
     }).then(async (res) => {
       const data = await res.json().catch(() => ({}));
