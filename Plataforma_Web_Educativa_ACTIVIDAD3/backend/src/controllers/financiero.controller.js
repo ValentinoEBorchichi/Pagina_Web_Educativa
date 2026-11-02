@@ -1,19 +1,9 @@
 const db = require('../config/database');
 const { sql, getPool } = require('../config/db');
 const PDFDocument = require('pdfkit');
-const crypto = require('crypto');
-const fs = require('fs/promises');
-const path = require('path');
 const { NOMBRE_REGEX } = require('../utils/validators');
 const { manejarErrorSQL, manejarErrorMssql } = require('../utils/dbErrors');
-
-// Directorio fijo y controlado por la aplicación. No se toma desde headers,
-// formularios ni variables enviadas por el cliente.
-const COMPROBANTES_DIR = path.resolve(__dirname, '../../uploads/comprobantes');
-
-const COMPROBANTES_DIR_PREFIX = COMPROBANTES_DIR.endsWith(path.sep)
-    ? COMPROBANTES_DIR
-    : `${COMPROBANTES_DIR}${path.sep}`;
+const { calcularHash, guardarComprobante, eliminarComprobante } = require('../services/comprobanteStorage');
 
 function respuestaErrorComprobante(res, status, message) {
     return res.status(status).json({ message });
@@ -42,14 +32,8 @@ exports.subirComprobante = async (req, res) => {
         return respuestaErrorComprobante(res, 400, 'fecha_transferencia debe tener formato YYYY-MM-DD');
     }
 
-    // Nunca se usa directamente el nombre enviado por el cliente como ruta.
-    const nombreArchivoSeguro = path.basename(archivo.originalname);
-    const hashArchivo = crypto
-        .createHash('sha256')
-        .update(archivo.buffer)
-        .digest('hex');
-
-    let destino;
+    const hashArchivo = calcularHash(archivo);
+    let comprobanteGuardado;
 
     try {
         const pool = await getPool();
@@ -85,23 +69,12 @@ exports.subirComprobante = async (req, res) => {
             return respuestaErrorComprobante(res, 409, 'El archivo ya fue cargado anteriormente');
         }
 
-        // El nombre físico no contiene ningún dato del usuario ni su extensión.
-        // El tipo real se conserva en tipo_mime y el nombre original en la BD.
-        const nombreGuardado = crypto.randomUUID();
-        const baseNormalizada = path.normalize(COMPROBANTES_DIR);
-        destino = path.normalize(path.join(baseNormalizada, nombreGuardado));
-
-        // Defensa explícita contra path traversal y requisito de análisis estático.
-        if (!destino.startsWith(COMPROBANTES_DIR_PREFIX)) {
-            return respuestaErrorComprobante(res, 400, 'Ruta de archivo no permitida');
-        }
-
-        await fs.writeFile(destino, archivo.buffer, { flag: 'wx' });
+        comprobanteGuardado = await guardarComprobante(archivo);
 
         const insertado = await pool.request()
             .input('facturaId', sql.Int, facturaId)
-            .input('nombreArchivo', sql.NVarChar(255), nombreArchivoSeguro)
-            .input('rutaArchivo', sql.NVarChar(500), destino)
+            .input('nombreArchivo', sql.NVarChar(255), comprobanteGuardado.nombreArchivo)
+            .input('rutaArchivo', sql.NVarChar(500), comprobanteGuardado.rutaArchivo)
             .input('tipoMime', sql.VarChar(100), archivo.mimetype)
             .input('tamanoBytes', sql.BigInt, archivo.size)
             .input('monto', sql.Decimal(12, 2), monto)
@@ -126,7 +99,9 @@ exports.subirComprobante = async (req, res) => {
             comprobante: insertado.recordset[0]
         });
     } catch (err) {
-        if (destino) await fs.unlink(destino).catch(() => undefined);
+        if (comprobanteGuardado) {
+            await eliminarComprobante(comprobanteGuardado.rutaArchivo);
+        }
 
         if (err.number === 2627 || err.number === 2601) {
             return respuestaErrorComprobante(res, 409, 'El archivo ya fue cargado anteriormente');

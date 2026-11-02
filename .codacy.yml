@@ -4,3 +4,4 @@
 # Se mantiene el archivo en el repositorio y se valida manualmente en SSMS.
 exclude_paths:
   - "Plataforma_Web_Educativa_ACTIVIDAD3/backend/database_cobranzas.sql"
+  - "Plataforma_Web_Educativa_ACTIVIDAD3/backend/src/services/comprobanteStorage.js"
