@@ -1,7 +1,8 @@
 const cron = require('node-cron');
 const { sql, getPool } = require('../config/db');
 
-const CRON_EXPRESION = '0 2 * * *';
+const MODO_PRUEBA = process.env.FACTURACION_CRON_PRUEBA === 'true';
+const CRON_EXPRESION = MODO_PRUEBA ? '* * * * *' : '0 2 * * *';
 const ZONA_HORARIA = process.env.TZ || 'America/Argentina/Buenos_Aires';
 
 function fechaLocal(fecha = new Date()) {
@@ -110,17 +111,20 @@ async function consultarConceptosAlumno(transaction, alumnoId, periodo) {
 
             UNION ALL
 
-            SELECT TOP 1 tc.id,
-                   COALESCE(tc.descripcion, 'Comedor'),
-                   tc.monto
-            FROM dbo.Alumnos a
-            INNER JOIN dbo.TarifaConcepto tc ON tc.tipo_servicio = 'comedor'
-                AND tc.vigencia <= @periodo
-                AND (tc.vigencia_hasta IS NULL OR tc.vigencia_hasta >= @periodo)
-                AND tc.activo = 1
-            WHERE a.id = @alumnoId
-              AND a.usa_comedor = 1
-            ORDER BY tc.vigencia DESC, tc.id DESC;
+            SELECT comedor.id, comedor.descripcion, comedor.monto
+            FROM (
+                SELECT TOP (1) tc.id,
+                       COALESCE(tc.descripcion, 'Comedor') AS descripcion,
+                       tc.monto
+                FROM dbo.Alumnos a
+                INNER JOIN dbo.TarifaConcepto tc ON tc.tipo_servicio = 'comedor'
+                    AND tc.vigencia <= @periodo
+                    AND (tc.vigencia_hasta IS NULL OR tc.vigencia_hasta >= @periodo)
+                    AND tc.activo = 1
+                WHERE a.id = @alumnoId
+                  AND a.usa_comedor = 1
+                ORDER BY tc.vigencia DESC, tc.id DESC
+            ) AS comedor;
         `);
 }
 
@@ -129,7 +133,7 @@ async function generarPdfFactura() {
 }
 
 async function generarFacturasDelPeriodo(fecha = new Date()) {
-    if (!esUltimoDiaHabil(fecha)) {
+    if (!MODO_PRUEBA && !esUltimoDiaHabil(fecha)) {
         return { ejecutado: false, motivo: 'Hoy no es el último día hábil del mes', creadas: 0, duplicadas: 0 };
     }
 
@@ -212,6 +216,7 @@ async function generarFacturasDelPeriodo(fecha = new Date()) {
 
 function iniciarFacturacionProgramada() {
     return cron.schedule(CRON_EXPRESION, async () => {
+        if (MODO_PRUEBA) console.log('--- EJECUTANDO CRON DE PRUEBA ---');
         try {
             const resultado = await generarFacturasDelPeriodo();
             console.log('[facturacion] Resultado:', resultado);
