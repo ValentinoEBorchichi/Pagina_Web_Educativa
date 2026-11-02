@@ -7,17 +7,13 @@ const path = require('path');
 const { NOMBRE_REGEX } = require('../utils/validators');
 const { manejarErrorSQL, manejarErrorMssql } = require('../utils/dbErrors');
 
-const COMPROBANTES_DIR = path.resolve(
-    __dirname,
-    '../../',
-    process.env.COMPROBANTES_DIR || 'uploads/comprobantes'
-);
+// Directorio fijo y controlado por la aplicación. No se toma desde headers,
+// formularios ni variables enviadas por el cliente.
+const COMPROBANTES_DIR = path.resolve(__dirname, '../../uploads/comprobantes');
 
 const COMPROBANTES_DIR_PREFIX = COMPROBANTES_DIR.endsWith(path.sep)
     ? COMPROBANTES_DIR
     : `${COMPROBANTES_DIR}${path.sep}`;
-
-const extensionesComprobante = new Set(['jpg', 'jpeg', 'png', 'pdf']);
 
 function respuestaErrorComprobante(res, status, message) {
     return res.status(status).json({ message });
@@ -48,11 +44,6 @@ exports.subirComprobante = async (req, res) => {
 
     // Nunca se usa directamente el nombre enviado por el cliente como ruta.
     const nombreArchivoSeguro = path.basename(archivo.originalname);
-    const extension = path.extname(nombreArchivoSeguro).slice(1).toLowerCase();
-    if (!extensionesComprobante.has(extension)) {
-        return respuestaErrorComprobante(res, 400, 'Extensión de archivo no permitida');
-    }
-
     const hashArchivo = crypto
         .createHash('sha256')
         .update(archivo.buffer)
@@ -95,7 +86,9 @@ exports.subirComprobante = async (req, res) => {
         }
 
         await fs.mkdir(COMPROBANTES_DIR, { recursive: true });
-        const nombreGuardado = path.basename(`${crypto.randomUUID()}.${extension}`);
+        // El nombre físico no contiene ningún dato del usuario ni su extensión.
+        // El tipo real se conserva en tipo_mime y el nombre original en la BD.
+        const nombreGuardado = crypto.randomUUID();
         destino = path.resolve(COMPROBANTES_DIR, nombreGuardado);
 
         // Defensa explícita contra path traversal y requisito de análisis estático.
