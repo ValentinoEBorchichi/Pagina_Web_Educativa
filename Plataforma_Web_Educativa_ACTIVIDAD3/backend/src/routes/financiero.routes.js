@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const financieroController = require('../controllers/financiero.controller');
 const { requireAuth } = require('../config/auth');
+const { recibirComprobante } = require('../middleware/uploadComprobante');
 
 // Rutas protegidas
 router.get('/personal', requireAuth(['admin']), financieroController.getPersonal);
@@ -18,5 +19,13 @@ router.get('/pagos', requireAuth(['admin', 'padre']), financieroController.getPa
 router.get('/comprobante/:pago_id', requireAuth(['admin', 'padre']), financieroController.generarComprobante);
 router.get('/saldo/:alumno_id', requireAuth(['admin', 'padre']), financieroController.getSaldoAlumno);
 router.get('/deudores', requireAuth(['admin']), financieroController.getDeudores);
+
+// El archivo se recibe como multipart/form-data en el campo "archivo".
+router.post(
+    '/comprobantes',
+    requireAuth(['admin', 'padre', 'alumno']),
+    recibirComprobante,
+    financieroController.subirComprobante
+);
 
 module.exports = router;
