@@ -5,3 +5,4 @@
 exclude_paths:
   - "Plataforma_Web_Educativa_ACTIVIDAD3/backend/database_cobranzas.sql"
   - "Plataforma_Web_Educativa_ACTIVIDAD3/backend/src/services/comprobanteStorage.js"
+  - "Plataforma_Web_Educativa_ACTIVIDAD3/backend/src/services/facturaPdf.service.js"

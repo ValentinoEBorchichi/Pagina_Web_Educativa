@@ -6,6 +6,14 @@ const path = require('path');
 const FACTURAS_DIR = path.resolve(__dirname, '../../uploads/facturas');
 const FACTURAS_PREFIX = `${FACTURAS_DIR}${path.sep}`;
 
+function validarFacturaId(valor) {
+    const id = Number(valor);
+    if (!Number.isSafeInteger(id) || id <= 0) {
+        throw new Error('El ID de factura no es válido');
+    }
+    return id;
+}
+
 function moneda(valor) {
     return new Intl.NumberFormat('es-AR', {
         style: 'currency',
@@ -14,10 +22,14 @@ function moneda(valor) {
 }
 
 function generarFacturaPDF(factura, detalles, alumno) {
-    const nombreArchivo = `factura_${factura.id}.pdf`;
-    const destino = path.normalize(path.join(FACTURAS_DIR, nombreArchivo));
+    const facturaId = validarFacturaId(factura.id);
+    const nombreArchivo = `factura_${facturaId}.pdf`;
+    const destino = path.normalize(path.resolve(FACTURAS_DIR, nombreArchivo));
+    const rutaRelativa = path.relative(FACTURAS_DIR, destino);
 
-    if (!destino.startsWith(FACTURAS_PREFIX)) {
+    if (!destino.startsWith(FACTURAS_PREFIX)
+        || rutaRelativa.startsWith('..')
+        || path.isAbsolute(rutaRelativa)) {
         return Promise.reject(new Error('Ruta de factura no permitida'));
     }
 
@@ -63,7 +75,7 @@ function generarFacturaPDF(factura, detalles, alumno) {
                 documento.moveDown(0.35);
             };
 
-            fila('N° de factura', factura.id);
+            fila('N° de factura', facturaId);
             fila('Período', factura.periodo);
             fila('Estado', factura.estado || 'Pendiente');
             fila('Alumno', `${alumno.apellido || ''}, ${alumno.nombre || ''}`.trim());
