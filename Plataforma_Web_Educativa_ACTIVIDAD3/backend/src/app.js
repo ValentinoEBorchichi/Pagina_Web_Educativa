@@ -15,12 +15,23 @@ app.use(morgan('dev'));
 // Rutas
 const authRoutes = require('./routes/auth.routes');
 const preinscripcionRoutes = require('./routes/preinscripcion.routes');
+const { requireAuth } = require('./config/auth');
+const { recibirComprobante } = require('./middleware/uploadComprobante');
+const financieroController = require('./controllers/financiero.controller');
 
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', require('./routes/admin.routes'));
 app.use('/api/preinscripciones', preinscripcionRoutes);
 app.use('/api/academico', require('./routes/academico.routes'));
 app.use('/api/financiero', require('./routes/financiero.routes'));
+// Endpoint público de la API para la carga de comprobantes.
+// Se conserva también /api/financiero/comprobantes por compatibilidad.
+app.post(
+    '/api/comprobantes',
+    requireAuth(['admin', 'padre', 'alumno']),
+    recibirComprobante,
+    financieroController.subirComprobante
+);
 app.use('/api/servicios', require('./routes/servicios.routes'));
 app.use('/api/comunicacion', require('./routes/comunicacion.routes'));
 app.use('/api/deportes', require('./routes/deportes.routes'));

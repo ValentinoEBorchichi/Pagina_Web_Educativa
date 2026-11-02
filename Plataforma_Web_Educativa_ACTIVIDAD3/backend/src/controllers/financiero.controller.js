@@ -13,6 +13,10 @@ const COMPROBANTES_DIR = path.resolve(
     process.env.COMPROBANTES_DIR || 'uploads/comprobantes'
 );
 
+const COMPROBANTES_DIR_PREFIX = COMPROBANTES_DIR.endsWith(path.sep)
+    ? COMPROBANTES_DIR
+    : `${COMPROBANTES_DIR}${path.sep}`;
+
 const extensionesComprobante = new Set(['jpg', 'jpeg', 'png', 'pdf']);
 
 function respuestaErrorComprobante(res, status, message) {
@@ -42,7 +46,9 @@ exports.subirComprobante = async (req, res) => {
         return respuestaErrorComprobante(res, 400, 'fecha_transferencia debe tener formato YYYY-MM-DD');
     }
 
-    const extension = path.extname(archivo.originalname).slice(1).toLowerCase();
+    // Nunca se usa directamente el nombre enviado por el cliente como ruta.
+    const nombreArchivoSeguro = path.basename(archivo.originalname);
+    const extension = path.extname(nombreArchivoSeguro).slice(1).toLowerCase();
     if (!extensionesComprobante.has(extension)) {
         return respuestaErrorComprobante(res, 400, 'Extensión de archivo no permitida');
     }
@@ -89,13 +95,19 @@ exports.subirComprobante = async (req, res) => {
         }
 
         await fs.mkdir(COMPROBANTES_DIR, { recursive: true });
-        const nombreGuardado = `${crypto.randomUUID()}.${extension}`;
-        destino = path.join(COMPROBANTES_DIR, nombreGuardado);
+        const nombreGuardado = path.basename(`${crypto.randomUUID()}.${extension}`);
+        destino = path.resolve(COMPROBANTES_DIR, nombreGuardado);
+
+        // Defensa explícita contra path traversal y requisito de análisis estático.
+        if (!destino.startsWith(COMPROBANTES_DIR_PREFIX)) {
+            return respuestaErrorComprobante(res, 400, 'Ruta de archivo no permitida');
+        }
+
         await fs.writeFile(destino, archivo.buffer, { flag: 'wx' });
 
         const insertado = await pool.request()
             .input('facturaId', sql.Int, facturaId)
-            .input('nombreArchivo', sql.NVarChar(255), archivo.originalname)
+            .input('nombreArchivo', sql.NVarChar(255), nombreArchivoSeguro)
             .input('rutaArchivo', sql.NVarChar(500), destino)
             .input('tipoMime', sql.VarChar(100), archivo.mimetype)
             .input('tamanoBytes', sql.BigInt, archivo.size)
