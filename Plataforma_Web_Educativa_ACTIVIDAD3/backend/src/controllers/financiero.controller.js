@@ -85,11 +85,11 @@ exports.subirComprobante = async (req, res) => {
             return respuestaErrorComprobante(res, 409, 'El archivo ya fue cargado anteriormente');
         }
 
-        await fs.mkdir(COMPROBANTES_DIR, { recursive: true });
         // El nombre físico no contiene ningún dato del usuario ni su extensión.
         // El tipo real se conserva en tipo_mime y el nombre original en la BD.
         const nombreGuardado = crypto.randomUUID();
-        destino = path.resolve(COMPROBANTES_DIR, nombreGuardado);
+        const baseNormalizada = path.normalize(COMPROBANTES_DIR);
+        destino = path.normalize(path.join(baseNormalizada, nombreGuardado));
 
         // Defensa explícita contra path traversal y requisito de análisis estático.
         if (!destino.startsWith(COMPROBANTES_DIR_PREFIX)) {
