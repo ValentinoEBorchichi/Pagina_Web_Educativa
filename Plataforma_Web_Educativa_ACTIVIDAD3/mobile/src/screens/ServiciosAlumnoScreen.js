@@ -1,27 +1,23 @@
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Button, SectionList, StyleSheet, Text, View } from 'react-native';
+import { API_URL } from '../config';
 
 // HU4: deportes (máximo 2, RF-06) y transporte (RF-09) vigentes del alumno.
 // Parámetros de navegación: { alumnoId }.
 
 const MAX_DEPORTES = 2;
 
-// Simula un GET mientras se desarrolla el endpoint de servicios del alumno.
-async function obtenerServicios(alumnoId) {
-  await new Promise((resolve) => setTimeout(resolve, 600));
-  return {
-    alumno: { id: alumnoId, nombre: 'Alex', apellido: 'Alumno' },
-    deportes: [
-      { id: 1, nombre: 'Fútbol', horario: 'Lunes y miércoles · 16:00' },
-      { id: 2, nombre: 'Natación', horario: 'Martes · 15:00' },
-      { id: 3, nombre: 'Vóley', horario: 'Viernes · 17:00' },
-    ],
-    transporte: { id: 1, nombre: 'Transporte escolar', numero_recorrido: 4, hora_salida: '07:15' },
-  };
+async function obtenerServicios(alumnoId, token) {
+  const res = await fetch(`${API_URL}/api/movil/alumnos/${alumnoId}/inscripciones`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.message || 'No se pudieron cargar los servicios');
+  return data;
 }
 
-export default function ServiciosAlumnoScreen({ route }) {
-  const { alumnoId } = route.params;
+export default function ServiciosAlumnoScreen({ route, navigation }) {
+  const { alumnoId, token } = route.params;
   const [datos, setDatos] = useState(null);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState('');
@@ -31,7 +27,7 @@ export default function ServiciosAlumnoScreen({ route }) {
     let cancelado = false;
     setCargando(true);
     setError('');
-    obtenerServicios(alumnoId)
+    obtenerServicios(alumnoId, token)
       .then((data) => {
         if (!cancelado) setDatos({ ...data, deportes: (data.deportes || []).slice(0, MAX_DEPORTES) });
       })
@@ -44,7 +40,7 @@ export default function ServiciosAlumnoScreen({ route }) {
     return () => {
       cancelado = true;
     };
-  }, [alumnoId, intento]);
+  }, [alumnoId, token, intento]);
 
   if (cargando) {
     return <ActivityIndicator style={styles.centro} size="large" />;
@@ -78,15 +74,22 @@ export default function ServiciosAlumnoScreen({ route }) {
           }]
         : [],
     },
+    {
+      titulo: 'Comedor',
+      vacio: datos.comedor ? 'Inscripto al comedor' : 'Sin inscripción al comedor',
+      data: [],
+    },
   ];
 
   return (
     <SectionList
       style={styles.container}
       sections={secciones}
-      ListHeaderComponent={
-        alumno ? <Text style={styles.alumno}>{alumno.nombre} {alumno.apellido}</Text> : null
-      }
+      ListHeaderComponent={alumno ? <View>
+        <Text style={styles.alumno}>{alumno.nombre} {alumno.apellido}</Text>
+        <Button title="Ver cuotas e historial" onPress={() => navigation.navigate('Cuenta', { alumnoId, token })} />
+        <Button title="Cambiar contraseña" onPress={() => navigation.navigate('CambiarPassword', { token })} />
+      </View> : null}
       renderSectionHeader={({ section }) => <Text style={styles.seccion}>{section.titulo}</Text>}
       renderSectionFooter={({ section }) =>
         section.data.length === 0 ? <Text style={styles.vacio}>{section.vacio}</Text> : null

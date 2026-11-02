@@ -4,4 +4,4 @@ export const API_URL = 'http://192.168.1.78:3000';
 
 // true mientras POST /api/auth/recuperar-password no esté implementado en el backend
 // (contrato en backend/docs/openapi-movil.yaml).
-export const SIMULAR_RECUPERACION = true;
+export const SIMULAR_RECUPERACION = false;

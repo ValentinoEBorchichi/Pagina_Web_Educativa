@@ -452,15 +452,18 @@ El contrato completo, con rutas, parámetros, ejemplos de respuesta y códigos d
 | :--- | :--- | :--- | :--- | :--- |
 | `POST` | `/api/auth/login` | Público | Existente | Inicio de sesión; la aplicación móvil admite únicamente el rol `padre`. |
 | `GET` | `/api/auth/me` | Autenticado | Existente | Validación del token almacenado en el dispositivo. |
-| `POST` | `/api/auth/recuperar-password` | Público | Diseñado | Envío por correo de un token de recuperación a partir del DNI (HU2). |
+| `POST` | `/api/auth/recuperar-password` | Público | Pendiente de proveedor de correo | Envío por correo de un token de recuperación a partir del DNI (HU2). |
 | `POST` | `/api/auth/restablecer-password` | Público | Diseñado | Restablecimiento de la contraseña con el token recibido (HU2). |
-| `GET` | `/api/inscripciones/:alumnoId` | padre, alumno, admin | Diseñado | Deportes (máximo dos) y transporte vigentes del alumno (HU4). |
+| `PUT` | `/api/auth/password` | Autenticado | Implementado | Cambio de contraseña con verificación de la actual y política de complejidad (HU2). |
+| `GET` | `/api/movil/alumnos/:alumnoId/inscripciones` | padre, admin | Implementado | Deportes, comedor y transporte; el padre queda limitado por su vínculo en SQL (HU4). |
+| `GET` | `/api/movil/alumnos/:alumnoId/estado-cuenta` | padre, admin | Implementado | Facturas, detalle de cargos, saldos pendientes y total adeudado (HU6/HU9). |
+| `GET` | `/api/movil/reportes-financieros` | admin | Implementado | Ingresos estimados por servicio, morosos y listado de facturas (HU12). |
 | `GET` | `/api/financiero/alumnos/:alumnoId/cuotas` | padre, admin | Diseñado | Cuotas pendientes (filtro `estado`) y total adeudado. |
 | `GET` | `/api/financiero/alumnos/:alumnoId/pagos` | padre, admin | Diseñado | Historial de pagos del alumno. |
 | `POST` | `/api/financiero/comprobantes` | padre, admin | Diseñado | Emisión de un comprobante con las cuotas seleccionadas y los datos para transferir. |
 | `POST` | `/api/financiero/comprobantes/:comprobanteId/transferencias` | padre, admin | Diseñado | Carga de la constancia de transferencia (`multipart/form-data`). |
 
-Los *endpoints* del módulo financiero requieren nuevas tablas en SQL Server (`Cuotas`, `Comprobantes`, `Comprobantes_Cuotas` y `Transferencias`).
+Los endpoints nuevos leen `Alumnos`, `Inscripciones_Deportes`, `Deportes`, `Transportes`, `Factura`, `FacturaDetalle`, `TarifaConcepto` y `Saldos` de SQL Server. Instalar primero `backend/database_schema.sql` y luego `backend/database_cobranzas.sql`. La selección de facturas genera un comprobante provisorio en la app; todavía no registra pagos ni acredita transferencias. La solicitud de recuperación por correo requiere integrar un proveedor de correo y emitir tokens de un solo uso.
 
 ### Aplicación móvil (`mobile/`)
 
@@ -469,12 +472,20 @@ cd mobile
 npm install
 npm run android   # requiere un emulador de Android o la app Expo Go
 ```
-*La URL de la API se configura en `mobile/src/config.js` (por defecto `http://10.0.2.2:3000`, que desde el emulador de Android apunta a la PC). Mientras `POST /api/auth/recuperar-password` no esté implementado, la pantalla de recuperación simula la respuesta (`SIMULAR_RECUPERACION = true`).*
+*La URL de la API se configura en `mobile/src/config.js` (ajustar a la IP local del servidor para Expo Go; `10.0.2.2` apunta al host desde el emulador Android). La solicitud de recuperación usa el endpoint documentado, aún pendiente de integrar con correo; el cambio de contraseña requiere sesión activa.*
 
 | Pantalla | Historia | Descripción |
 | :--- | :--- | :--- |
-| `RecuperarPasswordScreen` | HU2 | Formulario de DNI (7 u 8 dígitos) que solicita el envío del token de recuperación. |
-| `ServiciosAlumnoScreen` | HU4 | Listado de los deportes y del recorrido de transporte vigentes del alumno; recibe `{ alumnoId, token }` como parámetros de navegación. |
+| `RecuperarPasswordScreen` | HU2 | Formulario de DNI (7 u 8 dígitos); el envío requiere el proveedor de correo pendiente. |
+| `CambiarPasswordScreen` | HU2 | Cambio autenticado; recibe `{ token }` y valida contraseña actual y nueva. |
+| `ServiciosAlumnoScreen` | HU4 | Deportes, comedor y transporte; recibe `{ alumnoId, token }`. |
+| `CuentaScreen`, `HistorialScreen` | HU6/HU9 | Facturas abiertas, selección para pago y consulta del historial; reciben `{ alumnoId, token }`. El comprobante es provisorio hasta la acreditación. |
+
+### Bitácora de IA
+
+| Problema | Prompt utilizado | IA | Resumen de respuesta | ¿Funcionó? | Modificaciones | Resultado |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| Las pantallas móviles y los reportes financieros no tenían lecturas completas de SQL Server. | “Comienza a implementar HU2, HU4, HU6, HU7, HU9, HU12, endpoints GET para SQL Server y una fila para la bitácora de IA.” | OpenAI Codex (GPT-6) | Se conectaron lecturas protegidas de inscripciones y facturas, se agregaron vistas móviles de cuenta/historial y tablas web de reportes; además se implementó cambio autenticado de contraseña. | Parcialmente | Se añadió un mensaje aclaratorio para distinguir el comprobante provisorio de un pago acreditado. | Código inicial integrado; falta configurar envío de correo para recuperación y una pasarela/proceso de acreditación. |
 
 ---
 
