@@ -107,7 +107,8 @@ exports.login = async (req, res) => {
         const pool = await getPool();
         const { recordset } = await pool.request()
             .input('dni', sql.VarChar(20), dni)
-            .query(`SELECT u.id, u.username, u.password_hash, ${NOMBRE_COMPLETO.replaceAll('nombre', 'u.nombre').replaceAll('apellido', 'u.apellido')} AS nombre, u.rol, u.activo
+            .query(`SELECT u.id, u.username, u.password_hash, ${NOMBRE_COMPLETO.replaceAll('nombre', 'u.nombre').replaceAll('apellido', 'u.apellido')} AS nombre, u.rol, u.activo,
+                           CASE WHEN u.rol = 'padre' THEN u.id ELSE NULL END AS padre_id
                     FROM Usuarios u
                     LEFT JOIN Alumnos a ON a.usuario_id = u.id
                     WHERE u.username = @dni OR a.dni = @dni`);
