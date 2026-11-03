@@ -1,6 +1,7 @@
 const cron = require('node-cron');
 const { sql, getPool } = require('../config/db');
 const { generarFacturaPDF } = require('../services/facturaPdf.service');
+const { enviarFactura } = require('../services/email.service');
 
 const CRON_EXPRESION = '0 2 * * *';
 const ZONA_HORARIA = process.env.TZ || 'America/Argentina/Buenos_Aires';
@@ -168,9 +169,10 @@ async function generarFacturasDelPeriodo(fecha = new Date()) {
             const datosAlumno = await transaction.request()
                 .input('alumnoId', sql.Int, alumno.id)
                 .query(`
-                    SELECT id, nombre, apellido, dni
-                    FROM dbo.Alumnos
-                    WHERE id = @alumnoId;
+                    SELECT a.id, a.nombre, a.apellido, a.dni, u.email AS padre_email
+                    FROM dbo.Alumnos a
+                    INNER JOIN dbo.Usuarios u ON u.id = a.padre_id
+                    WHERE a.id = @alumnoId;
                 `);
 
             if (!datosAlumno.recordset.length) {
@@ -215,11 +217,18 @@ async function generarFacturasDelPeriodo(fecha = new Date()) {
                 total
             };
             try {
-                await generarFacturaPDF(facturaParaPdf, conceptos.recordset, datosAlumno.recordset[0]);
+                const rutaPDF = await generarFacturaPDF(
+                    facturaParaPdf,
+                    conceptos.recordset,
+                    datosAlumno.recordset[0]
+                );
+                const emailPadre = datosAlumno.recordset[0].padre_email;
+                if (emailPadre && process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+                    await enviarFactura(emailPadre, facturaParaPdf, rutaPDF);
+                }
             } catch (pdfError) {
-                // La factura ya fue confirmada en SQL Server; el error del PDF
-                // se registra para reintentar su generación sin duplicar la factura.
-                console.error(`[facturacion] Error al generar PDF ${facturaId}:`, pdfError.message);
+                // La factura ya fue confirmada; un fallo de PDF o correo no la duplica.
+                console.error(`[facturacion] Error al generar PDF o enviar factura ${facturaId}:`, pdfError.message);
             }
         } catch (error) {
             if (iniciada) await transaction.rollback().catch(() => undefined);
