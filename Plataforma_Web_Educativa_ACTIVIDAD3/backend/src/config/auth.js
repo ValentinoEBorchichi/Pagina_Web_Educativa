@@ -2,7 +2,7 @@ const jwt = require('jsonwebtoken');
 require('dotenv').config();
 
 // Autenticación y control de acceso por roles (RF-01).
-// El login firma un JWT con { id, username, rol } del usuario de SQL Server
+// El login firma un JWT con { id_usuario, id, username, rol, padre_id } del usuario de SQL Server
 // (tabla Usuarios); cada ruta protegida lo verifica y chequea el rol.
 //
 // Uso en una ruta:
@@ -12,8 +12,8 @@ require('dotenv').config();
 
 const ROLES = Object.freeze(['admin', 'docente', 'alumno', 'padre']);
 
-// Igual al cierre de sesión por inactividad del frontend (30 minutos).
-const TOKEN_EXPIRA_EN = '30m';
+// La HU-01 requiere una sesión válida durante 24 horas.
+const TOKEN_EXPIRA_EN = '24h';
 
 if (!process.env.JWT_SECRET) {
     throw new Error('Falta JWT_SECRET en backend/.env');
@@ -21,7 +21,16 @@ if (!process.env.JWT_SECRET) {
 
 function firmarToken(usuario) {
     return jwt.sign(
-        { id: usuario.id, username: usuario.username, rol: usuario.rol },
+        {
+            id_usuario: usuario.id,
+            // Se mantiene id por compatibilidad con los controladores existentes.
+            id: usuario.id,
+            username: usuario.username,
+            rol: usuario.rol,
+            ...(usuario.rol === 'padre' && usuario.padre_id
+                ? { padre_id: usuario.padre_id }
+                : {})
+        },
         process.env.JWT_SECRET,
         { expiresIn: TOKEN_EXPIRA_EN }
     );
