@@ -26,6 +26,9 @@ app.use('/api/preinscripciones', preinscripcionRoutes);
 app.use('/api/academico', require('./routes/academico.routes'));
 app.use('/api/financiero', require('./routes/financiero.routes'));
 app.use('/api/movil', require('./routes/movil.routes'));
+// Cuenta corriente del alumno autenticado. El controlador verifica el vínculo
+// padre/alumno antes de devolver facturas y saldos.
+app.get('/api/facturas', requireAuth(['admin', 'padre']), require('./controllers/movil.controller').getEstadoCuentaAlumno);
 // Endpoint público de la API para la carga de comprobantes.
 // Se conserva también /api/financiero/comprobantes por compatibilidad.
 app.post(
