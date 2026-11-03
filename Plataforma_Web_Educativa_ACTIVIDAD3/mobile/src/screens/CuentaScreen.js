@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import { ActivityIndicator, Button, FlatList, StyleSheet, Text, View } from 'react-native';
 import { apiUrl } from '../config';
 
@@ -9,9 +10,11 @@ export default function CuentaScreen({ route, navigation }) {
   const [error, setError] = useState('');
   const [cargando, setCargando] = useState(true);
 
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
     let vigente = true;
-    fetch(apiUrl('estado-cuenta', alumnoId), {
+    setCargando(true);
+    setError('');
+    fetch(apiUrl('/api/facturas', alumnoId), {
       headers: { Authorization: `Bearer ${token}` },
     }).then(async (res) => {
       const data = await res.json().catch(() => ({}));
@@ -20,7 +23,7 @@ export default function CuentaScreen({ route, navigation }) {
     }).catch((e) => vigente && setError(e.message))
       .finally(() => vigente && setCargando(false));
     return () => { vigente = false; };
-  }, [alumnoId, token]);
+  }, [alumnoId, token]));
 
   const facturas = cuenta?.facturas || [];
   const alternar = (id) => setSeleccionadas((actuales) => actuales.includes(id)
@@ -40,6 +43,7 @@ export default function CuentaScreen({ route, navigation }) {
           <Text style={styles.titulo}>Factura {item.id} · {new Date(item.periodo).toLocaleDateString('es-AR', { month: 'long', year: 'numeric' })}</Text>
           <Text>Estado: {item.estado} · Saldo: ${Number(item.saldo).toFixed(2)}</Text>
           {(item.detalles || []).map((d) => <Text key={d.id} style={styles.detalle}>• {d.descripcion} (${Number(d.subtotal).toFixed(2)})</Text>)}
+          {pagable ? <Button title="Subir ticket de transferencia" onPress={() => navigation.navigate('SubirComprobante', { factura: item, token })} /> : null}
           {pagable ? <Button title={seleccionadas.includes(item.id) ? '✓ Seleccionada' : 'Seleccionar para pagar'} onPress={() => alternar(item.id)} /> : null}
         </View>;
       }} />
