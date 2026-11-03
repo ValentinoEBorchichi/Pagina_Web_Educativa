@@ -1,11 +1,13 @@
 // En Expo Go sobre un celular físico, usar la IPv4 de la PC conectada a la misma WiFi.
 // Esta IP puede cambiar si el router asigna otra dirección.
-export const API_URL = 'http://192.168.1.78:3000';
+export const API_URL = 'http://192.168.1.9:3000';
 
 const API_PATHS = new Set([
   '/api/auth/password',
   '/api/auth/recuperar-password',
   '/api/movil/mis-inscripciones',
+  '/api/facturas',
+  '/api/comprobantes',
 ]);
 const ALUMNO_RECURSOS = new Set(['inscripciones', 'estado-cuenta']);
 
@@ -14,7 +16,13 @@ const ALUMNO_RECURSOS = new Set(['inscripciones', 'estado-cuenta']);
 export function apiUrl(path, alumnoId) {
   let ruta;
   if (API_PATHS.has(path)) {
-    ruta = path;
+    if (path === '/api/facturas') {
+      const id = Number(alumnoId);
+      if (!Number.isSafeInteger(id) || id <= 0) throw new Error('Alumno inválido');
+      ruta = `${path}?alumno_id=${encodeURIComponent(String(id))}`;
+    } else {
+      ruta = path;
+    }
   } else if (ALUMNO_RECURSOS.has(path) && Number.isSafeInteger(Number(alumnoId)) && Number(alumnoId) > 0) {
     ruta = `/api/movil/alumnos/${encodeURIComponent(String(Number(alumnoId)))}/${path}`;
   } else {

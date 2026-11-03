@@ -82,7 +82,7 @@ exports.getInscripcionesAlumno = async (req, res) => {
 };
 
 exports.getEstadoCuentaAlumno = async (req, res) => {
-    const alumnoId = Number.parseInt(req.params.alumnoId, 10);
+    const alumnoId = Number.parseInt(req.params.alumnoId || req.query.alumno_id, 10);
     if (!Number.isInteger(alumnoId) || alumnoId <= 0) return res.status(400).json({ message: 'Alumno inválido' });
     try {
         const pool = await getPool();

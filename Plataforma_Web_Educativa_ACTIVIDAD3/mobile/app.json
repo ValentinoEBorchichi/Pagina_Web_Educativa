@@ -10,6 +10,7 @@
       "supportsTablet": true
     },
     "android": {
+      "package": "ar.edu.educartransformar.mobile",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -21,7 +22,14 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-status-bar"
+      "expo-status-bar",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "La app necesita acceder a las fotos para adjuntar el ticket de transferencia.",
+          "microphonePermission": false
+        }
+      ]
     ]
   }
 }
