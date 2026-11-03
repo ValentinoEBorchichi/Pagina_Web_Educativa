@@ -21,6 +21,8 @@ const financieroController = require('./controllers/financiero.controller');
 
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', require('./routes/admin.routes'));
+app.use('/api/valores', require('./routes/valores.routes'));
+app.use('/api/reportes', require('./routes/reportes.routes'));
 app.use('/api/preinscripciones', preinscripcionRoutes);
 app.use('/api/academico', require('./routes/academico.routes'));
 app.use('/api/financiero', require('./routes/financiero.routes'));
