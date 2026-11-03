@@ -15,18 +15,38 @@ function fechaLocal(fecha = new Date()) {
     }).format(fecha);
 }
 
-function esUltimoDiaHabil(fecha = new Date()) {
-    const hoy = new Date(`${fechaLocal(fecha)}T12:00:00`);
-    const dia = hoy.getDay();
-    if (dia === 0 || dia === 6) return false;
+function fechaUTCFormateada(fecha) {
+    return fecha.toISOString().slice(0, 10);
+}
 
-    const siguiente = new Date(hoy);
-    siguiente.setDate(hoy.getDate() + 1);
-    while (siguiente.getDay() === 0 || siguiente.getDay() === 6) {
-        siguiente.setDate(siguiente.getDate() + 1);
+async function esHoyUltimoDiaHabil(fecha = new Date()) {
+    const hoyTexto = fechaLocal(fecha);
+    const [anio, mes] = hoyTexto.split('-').map(Number);
+    // Date.UTC evita que el horario local altere el día al retroceder.
+    const candidato = new Date(Date.UTC(anio, mes, 0));
+    const pool = await getPool();
+    while (candidato.getUTCFullYear() >= anio - 1) {
+        const diaSemana = candidato.getUTCDay();
+        const fechaCandidata = fechaUTCFormateada(candidato);
+
+        if (diaSemana !== 0 && diaSemana !== 6) {
+            const feriado = await pool.request()
+                .input('fecha', sql.Date, fechaCandidata)
+                .query(`
+                    SELECT TOP 1 1 AS existe
+                    FROM dbo.Feriado
+                    WHERE fecha = @fecha;
+                `);
+
+            if (!feriado.recordset.length) {
+                return fechaCandidata === hoyTexto;
+            }
+        }
+
+        candidato.setUTCDate(candidato.getUTCDate() - 1);
     }
 
-    return siguiente.getMonth() !== hoy.getMonth();
+    return false;
 }
 
 function periodoDelMes(fecha = new Date()) {
@@ -130,7 +150,7 @@ async function consultarConceptosAlumno(transaction, alumnoId, periodo) {
 }
 
 async function generarFacturasDelPeriodo(fecha = new Date()) {
-    if (!esUltimoDiaHabil(fecha)) {
+    if (!(await esHoyUltimoDiaHabil(fecha))) {
         return { ejecutado: false, motivo: 'Hoy no es el último día hábil del mes', creadas: 0, duplicadas: 0 };
     }
 
@@ -257,7 +277,9 @@ function iniciarFacturacionProgramada() {
 }
 
 module.exports = {
-    esUltimoDiaHabil,
+    esHoyUltimoDiaHabil,
+    // Alias de compatibilidad para consumidores existentes del job.
+    esUltimoDiaHabil: esHoyUltimoDiaHabil,
     periodoDelMes,
     generarFacturasDelPeriodo,
     iniciarFacturacionProgramada
