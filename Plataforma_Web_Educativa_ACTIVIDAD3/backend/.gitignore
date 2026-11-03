@@ -4,4 +4,6 @@ database/database.sqlite
 uploads/*
 !uploads/comprobantes/
 !uploads/comprobantes/.gitkeep
+!uploads/facturas/
+!uploads/facturas/.gitkeep
 .DS_Store

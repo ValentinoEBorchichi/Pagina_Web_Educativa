@@ -5,6 +5,7 @@ const app = require('./app');
 const db = require('./config/database');
 const { getPool } = require('./config/db');
 const { iniciarFacturacionProgramada } = require('./jobs/facturacion.job');
+const { iniciarRecordatoriosProgramados } = require('./jobs/recordatorios.job');
 
 const PORT = process.env.PORT || 3000;
 
@@ -25,6 +26,7 @@ if (process.env.SEED_ON_BOOT === 'true') {
 getPool().catch((err) => console.error('No se pudo conectar a SQL Server:', err.message));
 
 const tareaFacturacion = iniciarFacturacionProgramada();
+const tareaRecordatorios = iniciarRecordatoriosProgramados();
 
 const server = app.listen(PORT, () => {
     console.log(`Servidor corriendo en el puerto ${PORT}`);
@@ -32,6 +34,7 @@ const server = app.listen(PORT, () => {
 
 function apagar() {
     tareaFacturacion.stop();
+    tareaRecordatorios.stop();
     server.close(() => process.exit(0));
 }
 
