@@ -69,4 +69,15 @@ async function enviarRecordatorioDeuda(emailDestino, nombrePadre, deudas) {
     });
 }
 
-module.exports = { enviarFactura, enviarRecordatorioDeuda };
+async function enviarRecuperacionPassword(emailDestino, nombre, token) {
+    validarDestino(emailDestino);
+    return obtenerTransporter().sendMail({
+        from: `Educar para Transformar <${process.env.EMAIL_USER}>`,
+        to: emailDestino,
+        subject: 'Recuperación de contraseña - Educar para Transformar',
+        text: `Hola ${nombre || ''}. Tu código para cambiar la contraseña es ${token}. Vence en 15 minutos. Si no solicitaste este cambio, ignorá este correo.`,
+        html: `<p>Hola ${nombre || ''},</p><p>Ingresá este código en la aplicación para cambiar tu contraseña:</p><p style="font-size:22px;font-weight:bold;letter-spacing:2px">${token}</p><p>El código vence en 15 minutos. Si no solicitaste el cambio, ignorá este correo.</p>`
+    });
+}
+
+module.exports = { enviarFactura, enviarRecordatorioDeuda, enviarRecuperacionPassword };
