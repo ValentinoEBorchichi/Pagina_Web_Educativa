@@ -3,6 +3,10 @@ const { sql, getPool } = require('../config/db');
 const { ROLES, firmarToken } = require('../config/auth');
 const { NOMBRE_REGEX } = require('../utils/validators');
 const { manejarErrorMssql } = require('../utils/dbErrors');
+const crypto = require('crypto');
+const { enviarRecuperacionPassword } = require('../services/email.service');
+
+const hashTokenRecuperacion = (token) => crypto.createHash('sha256').update(token).digest('hex');
 
 // Autenticación y gestión de usuarios (RF-01) sobre SQL Server (tabla Usuarios).
 // Las respuestas mantienen la forma que ya consume el frontend: un único campo
@@ -166,6 +170,63 @@ exports.cambiarPassword = async (req, res) => {
         await pool.request().input('id', sql.Int, req.user.id).input('hash', sql.VarChar(100), hash)
             .query('UPDATE dbo.Usuarios SET password_hash = @hash WHERE id = @id');
         return res.json({ message: 'Contraseña actualizada correctamente' });
+    } catch (err) { return manejarErrorMssql(res, err); }
+};
+
+exports.solicitarRecuperacion = async (req, res) => {
+    const dni = String(req.body.dni || '').trim();
+    if (!/^\d{7,8}$/.test(dni)) return res.status(400).json({ message: 'Ingresá un DNI válido de 7 u 8 dígitos' });
+    try {
+        const pool = await getPool();
+        await pool.request().query(`IF OBJECT_ID('dbo.PasswordResetTokens', 'U') IS NULL
+            CREATE TABLE dbo.PasswordResetTokens (
+              id INT IDENTITY(1,1) PRIMARY KEY,
+              usuario_id INT NOT NULL,
+              token_hash CHAR(64) NOT NULL,
+              vence DATETIME2(0) NOT NULL,
+              usado BIT NOT NULL CONSTRAINT DF_PasswordResetTokens_usado DEFAULT (0),
+              CONSTRAINT FK_PasswordResetTokens_Usuarios FOREIGN KEY (usuario_id) REFERENCES dbo.Usuarios(id)
+            );`);
+        const { recordset } = await pool.request().input('dni', sql.VarChar(20), dni).query(`
+            SELECT TOP 1 u.id, u.nombre, u.email FROM dbo.Alumnos a
+            INNER JOIN dbo.Usuarios u ON u.id = a.padre_id
+            WHERE a.dni = @dni AND u.rol = 'padre' AND u.activo = 1 AND u.email IS NOT NULL`);
+        if (recordset[0]) {
+            const token = crypto.randomBytes(24).toString('hex');
+            const user = recordset[0];
+            await pool.request().input('usuarioId', sql.Int, user.id).query('DELETE FROM dbo.PasswordResetTokens WHERE usuario_id = @usuarioId');
+            await pool.request().input('usuarioId', sql.Int, user.id)
+                .input('tokenHash', sql.Char(64), hashTokenRecuperacion(token))
+                .query(`INSERT INTO dbo.PasswordResetTokens (usuario_id, token_hash, vence)
+                        VALUES (@usuarioId, @tokenHash, DATEADD(MINUTE, 15, SYSUTCDATETIME()))`);
+            await enviarRecuperacionPassword(user.email, user.nombre, token);
+        }
+        return res.json({ message: 'Si encontramos una cuenta asociada, enviaremos un código al correo registrado.' });
+    } catch (err) { return manejarErrorMssql(res, err); }
+};
+
+exports.restablecerPassword = async (req, res) => {
+    const token = String(req.body.token || '').trim();
+    const nueva = String(req.body.password_nueva || '');
+    if (!/^[a-f0-9]{48}$/.test(token)) return res.status(400).json({ message: 'El código de recuperación no es válido' });
+    const pwError = validarPassword(nueva);
+    if (pwError) return res.status(400).json({ message: pwError });
+    try {
+        const pool = await getPool();
+        await pool.request().query(`IF OBJECT_ID('dbo.PasswordResetTokens', 'U') IS NULL
+            THROW 50001, 'No hay solicitudes de recuperación vigentes', 1;`);
+        const { recordset } = await pool.request().input('tokenHash', sql.Char(64), hashTokenRecuperacion(token))
+            .query(`SELECT TOP 1 usuario_id FROM dbo.PasswordResetTokens
+                    WHERE token_hash = @tokenHash AND usado = 0 AND vence > SYSUTCDATETIME()`);
+        if (!recordset[0]) return res.status(400).json({ message: 'El código venció o ya fue utilizado. Solicitá uno nuevo.' });
+        const hash = await bcrypt.hash(nueva, 10);
+        await pool.request().input('usuarioId', sql.Int, recordset[0].usuario_id).input('hash', sql.VarChar(100), hash)
+            .input('tokenHash', sql.Char(64), hashTokenRecuperacion(token)).query(`
+                BEGIN TRANSACTION;
+                UPDATE dbo.Usuarios SET password_hash = @hash WHERE id = @usuarioId;
+                UPDATE dbo.PasswordResetTokens SET usado = 1 WHERE token_hash = @tokenHash AND usado = 0;
+                COMMIT TRANSACTION;`);
+        return res.json({ message: 'Contraseña actualizada. Ya podés iniciar sesión.' });
     } catch (err) { return manejarErrorMssql(res, err); }
 };
 

@@ -29,6 +29,9 @@ const AdminDashboard = () => {
     const [cuotasConfig, setCuotasConfig] = useState([]);
     const [reportesStats, setReportesStats] = useState(null);
     const [reportesFinancieros, setReportesFinancieros] = useState(null);
+    const [reporteAcademico, setReporteAcademico] = useState([]);
+    const [reportePagos, setReportePagos] = useState([]);
+    const [reporteDeudores, setReporteDeudores] = useState([]);
     const [materias, setMaterias] = useState([]);
     const [actividades, setActividades] = useState([]);
     const [horarios, setHorarios] = useState([]);
@@ -47,7 +50,7 @@ const AdminDashboard = () => {
         if (activeTab === 'personal') fetchPersonal();
         if (activeTab === 'finanzas') { fetchFinanzas(); fetchNiveles(); fetchAlumnos(); fetchPagos(); }
         if (activeTab === 'servicios') { fetchServicios(); fetchAlumnos(); }
-        if (activeTab === 'reportes') { fetchReportesStats(); fetchReportesFinancieros(); }
+        if (activeTab === 'reportes') { fetchReportesStats(); fetchReportesFinancieros(); fetchReporteAcademico(); fetchReportePagos(); fetchReporteDeudores(); }
         if (activeTab === 'usuarios') fetchUsuarios();
     }, [activeTab]);
 
@@ -227,6 +230,27 @@ const AdminDashboard = () => {
             const response = await apiFetch(`${API_URL}/api/movil/reportes-financieros`);
             if (response.ok) setReportesFinancieros(await response.json());
         } catch (error) { console.error('Error reporte financiero:', error); }
+    };
+
+    const fetchReporteAcademico = async () => {
+        try {
+            const response = await apiFetch(`${API_URL}/api/comunicacion/reportes/academico`);
+            if (response.ok) setReporteAcademico(await response.json());
+        } catch (error) { console.error('Error reporte académico:', error); }
+    };
+
+    const fetchReportePagos = async () => {
+        try {
+            const response = await apiFetch(`${API_URL}/api/comunicacion/reportes/financiero`);
+            if (response.ok) setReportePagos(await response.json());
+        } catch (error) { console.error('Error reporte de pagos:', error); }
+    };
+
+    const fetchReporteDeudores = async () => {
+        try {
+            const response = await apiFetch(`${API_URL}/api/financiero/deudores`);
+            if (response.ok) setReporteDeudores(await response.json());
+        } catch (error) { console.error('Error listado deudores:', error); }
     };
 
     const exportCSV = (filename, headers, rows) => {
@@ -1512,7 +1536,7 @@ const AdminDashboard = () => {
                                 </div>
                             </div>
                         )}
-                        <button onClick={() => { fetchReportesStats(); fetchReportesFinancieros(); }} className="btn btn-hero-outline" style={{ fontSize: '0.75rem', color: 'var(--blue)', borderColor: 'var(--blue)', marginTop: '16px' }}>🔄 Refrescar</button>
+                        <button onClick={() => { fetchReportesStats(); fetchReportesFinancieros(); fetchReporteAcademico(); fetchReportePagos(); fetchReporteDeudores(); }} className="btn btn-hero-outline" style={{ fontSize: '0.75rem', color: 'var(--blue)', borderColor: 'var(--blue)', marginTop: '16px' }}>🔄 Refrescar reportes</button>
                     </div>
 
                     <div style={{ gridColumn: '1 / -1', background: 'var(--white)', padding: '24px', borderRadius: 'var(--radius)', boxShadow: 'var(--shadow-sm)', overflowX: 'auto' }}>
@@ -1536,6 +1560,33 @@ const AdminDashboard = () => {
                                     {!(reportesFinancieros.facturas || []).length && <tr><td colSpan="5" style={{ padding: 16, color: '#64748b' }}>No hay facturas cargadas.</td></tr>}</tbody>
                             </table>
                         </>}
+                    </div>
+
+                    <div style={{ gridColumn: '1 / -1', background: 'var(--white)', padding: '24px', borderRadius: 'var(--radius)', boxShadow: 'var(--shadow-sm)', overflowX: 'auto' }}>
+                        <h2 style={{ fontSize: '1.1rem', color: 'var(--blue)', fontWeight: 800, marginBottom: '16px' }}>📚 Reporte académico · calificaciones</h2>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                            <thead><tr style={{ borderBottom: '2px solid #f1f5f9' }}><th style={thStyle}>Alumno</th><th style={thStyle}>DNI</th><th style={thStyle}>Curso</th><th style={thStyle}>Materia</th><th style={thStyle}>Trimestre</th><th style={thStyle}>Nota</th></tr></thead>
+                            <tbody>{reporteAcademico.map((r, i) => <tr key={`${r.dni}-${r.materia_nombre}-${r.trimestre}-${i}`} style={{ borderBottom: '1px solid #f1f5f9' }}><td style={tdStyle}>{r.apellido}, {r.nombre}</td><td style={tdStyle}>{r.dni}</td><td style={tdStyle}>{[r.nivel_nombre, r.division].filter(Boolean).join(' · ') || '—'}</td><td style={tdStyle}>{r.materia_nombre || '—'}</td><td style={tdStyle}>{r.trimestre}</td><td style={tdStyle}>{r.nota}</td></tr>)}
+                                {!reporteAcademico.length && <tr><td colSpan="6" style={{ padding: 16, color: '#64748b' }}>No hay calificaciones para mostrar.</td></tr>}</tbody>
+                        </table>
+                    </div>
+
+                    <div style={{ gridColumn: '1 / -1', background: 'var(--white)', padding: '24px', borderRadius: 'var(--radius)', boxShadow: 'var(--shadow-sm)', overflowX: 'auto' }}>
+                        <h2 style={{ fontSize: '1.1rem', color: 'var(--blue)', fontWeight: 800, marginBottom: '16px' }}>💳 Registro de pagos</h2>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                            <thead><tr style={{ borderBottom: '2px solid #f1f5f9' }}><th style={thStyle}>Fecha</th><th style={thStyle}>Alumno</th><th style={thStyle}>DNI</th><th style={thStyle}>Método</th><th style={thStyle}>Monto</th><th style={thStyle}>Saldo pendiente</th></tr></thead>
+                            <tbody>{reportePagos.map((r, i) => <tr key={`${r.dni}-${r.fecha_pago}-${i}`} style={{ borderBottom: '1px solid #f1f5f9' }}><td style={tdStyle}>{r.fecha_pago ? new Date(r.fecha_pago).toLocaleDateString('es-AR') : '—'}</td><td style={tdStyle}>{r.apellido}, {r.nombre}</td><td style={tdStyle}>{r.dni}</td><td style={tdStyle}>{r.metodo_pago || '—'}</td><td style={tdStyle}>${Number(r.monto_pagado || 0).toFixed(2)}</td><td style={tdStyle}>${Number(r.saldo_pendiente || 0).toFixed(2)}</td></tr>)}
+                                {!reportePagos.length && <tr><td colSpan="6" style={{ padding: 16, color: '#64748b' }}>No hay pagos registrados para mostrar.</td></tr>}</tbody>
+                        </table>
+                    </div>
+
+                    <div style={{ gridColumn: '1 / -1', background: 'var(--white)', padding: '24px', borderRadius: 'var(--radius)', boxShadow: 'var(--shadow-sm)', overflowX: 'auto' }}>
+                        <h2 style={{ fontSize: '1.1rem', color: 'var(--blue)', fontWeight: 800, marginBottom: '16px' }}>⚠️ Listado de deudores</h2>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                            <thead><tr style={{ borderBottom: '2px solid #f1f5f9' }}><th style={thStyle}>Alumno</th><th style={thStyle}>DNI</th><th style={thStyle}>Saldo pendiente</th></tr></thead>
+                            <tbody>{reporteDeudores.map((r) => <tr key={r.id} style={{ borderBottom: '1px solid #f1f5f9' }}><td style={tdStyle}>{r.apellido}, {r.nombre}</td><td style={tdStyle}>{r.dni}</td><td style={tdStyle}>${Number(r.saldo_pendiente || 0).toFixed(2)}</td></tr>)}
+                                {!reporteDeudores.length && <tr><td colSpan="3" style={{ padding: 16, color: '#64748b' }}>No hay deudas pendientes.</td></tr>}</tbody>
+                        </table>
                     </div>
 
                     <div style={{ background: 'var(--white)', padding: '24px', borderRadius: 'var(--radius)', boxShadow: 'var(--shadow-sm)' }}>

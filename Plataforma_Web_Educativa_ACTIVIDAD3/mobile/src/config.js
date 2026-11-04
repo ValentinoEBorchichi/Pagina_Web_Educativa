@@ -3,11 +3,14 @@
 export const API_URL = 'http://192.168.1.9:3000';
 
 const API_PATHS = new Set([
+  '/api/auth/login',
   '/api/auth/password',
   '/api/auth/recuperar-password',
+  '/api/auth/restablecer-password',
   '/api/movil/mis-inscripciones',
   '/api/facturas',
   '/api/comprobantes',
+  '/api/padres/mis-hijos',
 ]);
 const ALUMNO_RECURSOS = new Set(['inscripciones', 'estado-cuenta']);
 
