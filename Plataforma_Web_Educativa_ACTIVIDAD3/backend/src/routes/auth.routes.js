@@ -5,6 +5,8 @@ const { requireAuth } = require('../config/auth');
 
 router.post('/registro', authController.registroFamiliar);
 router.post('/login', authController.login);
+router.post('/recuperar-password', authController.solicitarRecuperacion);
+router.post('/restablecer-password', authController.restablecerPassword);
 router.get('/me', requireAuth(), authController.getMe);
 router.put('/password', requireAuth(), authController.cambiarPassword);
 router.get('/padres', requireAuth(), authController.getPadres);
