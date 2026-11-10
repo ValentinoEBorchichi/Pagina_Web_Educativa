@@ -27,18 +27,18 @@ const COLORS = {
   danger: '#b91c1c',
 };
 
-function Accion({ title, onPress, secondary = false }) {
+function Accion({ title, onPress, secondary = false, danger = false }) {
   return (
     <Pressable
       accessibilityRole="button"
       onPress={onPress}
       style={({ pressed }) => [
         styles.accion,
-        secondary ? styles.accionSecundaria : styles.accionPrimaria,
+        secondary ? (danger ? styles.accionPeligro : styles.accionSecundaria) : styles.accionPrimaria,
         pressed && styles.presionado,
       ]}
     >
-      <Text style={secondary ? styles.textoAccionSecundaria : styles.textoAccion}>{title}</Text>
+      <Text style={secondary ? (danger ? styles.textoAccionPeligro : styles.textoAccionSecundaria) : styles.textoAccion}>{title}</Text>
     </Pressable>
   );
 }
@@ -135,7 +135,7 @@ export default function ServiciosAlumnoScreen({ route, navigation, token: tokenP
       sections={secciones}
       ListHeaderComponent={alumno ? <View>
         <ImageBackground source={{ uri: FONDO_EDUCATIVO }} style={styles.resumen} imageStyle={styles.resumenImagen}>
-          <View style={[styles.resumenCapa, { backgroundColor: temaAlumno.fondo + 'D9' }]}>
+          <View style={[styles.resumenCapa, { backgroundColor: temaAlumno.fondo + 'B3' }]}>
             <Text style={styles.periodo}>Servicios de {new Date().toLocaleDateString('es-AR', { month: 'long', year: 'numeric' })}</Text>
             <Text style={styles.alumno}>{alumno.nombre} {alumno.apellido}</Text>
           </View>
@@ -156,7 +156,7 @@ export default function ServiciosAlumnoScreen({ route, navigation, token: tokenP
         <View style={styles.acciones}>
           <Accion title="Ver cuotas e historial" onPress={() => navigation.navigate('Cuenta', { alumnoId, token })} />
           <Accion title="Cambiar contraseña" secondary onPress={() => navigation.navigate('CambiarPassword', { token })} />
-          {onLogout ? <Accion title="Cerrar sesión" secondary onPress={onLogout} /> : null}
+          {onLogout ? <Accion title="Cerrar sesión" secondary danger onPress={onLogout} /> : null}
         </View>
       </View> : null}
       renderSectionHeader={({ section }) => <View style={styles.seccionFila}><Text style={styles.seccion}>{section.titulo}</Text></View>}
@@ -191,9 +191,11 @@ const styles = StyleSheet.create({
   acciones: { gap: 10, marginBottom: 12 },
   accion: { minHeight: 48, borderRadius: 12, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16 },
   accionPrimaria: { backgroundColor: COLORS.primary },
-  accionSecundaria: { backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border },
+  accionSecundaria: { backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.primary },
+  accionPeligro: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#dc2626' },
   textoAccion: { color: COLORS.surface, fontWeight: '800', fontSize: 15 },
   textoAccionSecundaria: { color: COLORS.primaryDark, fontWeight: '800', fontSize: 15 },
+  textoAccionPeligro: { color: '#b91c1c', fontWeight: '800', fontSize: 15 },
   presionado: { opacity: 0.75 },
   seccionFila: { borderBottomWidth: 1, borderBottomColor: COLORS.border, marginTop: 12, marginBottom: 8, paddingBottom: 8 },
   seccion: { color: COLORS.text, fontSize: 18, fontWeight: '800' },
