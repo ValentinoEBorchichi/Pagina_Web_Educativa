@@ -226,31 +226,26 @@ CREATE INDEX ix_inscripciones_deportes_deporte_id ON inscripciones_deportes (dep
 --   50006  RF-06: máximo 2 deportes por alumno.
 --   50007  RF-07: los horarios de los deportes de un alumno no se superponen.
 --   50008  El deporte no tiene cupo disponible.
+-- FOR EACH ROW con NEW (no una tabla de transición): Postgres no admite
+-- REFERENCING ... TABLE en un trigger con más de un evento (INSERT OR
+-- UPDATE), y la app siempre inserta/actualiza una inscripción a la vez, así
+-- que es equivalente a la versión por lote.
 CREATE OR REPLACE FUNCTION fn_inscripciones_deportes_reglas() RETURNS TRIGGER AS $$
 BEGIN
-    IF NOT EXISTS (SELECT 1 FROM inserted) THEN
-        RETURN NULL;
-    END IF;
-
     -- RF-06: límite de 2 deportes por alumno.
-    IF EXISTS (
-        SELECT 1 FROM inscripciones_deportes i
-        WHERE i.alumno_id IN (SELECT alumno_id FROM inserted)
-        GROUP BY i.alumno_id
-        HAVING COUNT(*) > 2
-    ) THEN
+    IF (SELECT COUNT(*) FROM inscripciones_deportes WHERE alumno_id = NEW.alumno_id) > 2 THEN
         RAISE EXCEPTION 'RF-06: un alumno no puede inscribirse en más de 2 deportes.' USING ERRCODE = '50006';
     END IF;
 
     -- RF-07: superposición horaria (comparten al menos un día y los rangos se pisan).
     IF EXISTS (
         SELECT 1
-        FROM inserted AS nueva
-        JOIN deportes AS d_nuevo ON d_nuevo.id = nueva.deporte_id
+        FROM deportes AS d_nuevo
         JOIN inscripciones_deportes AS otra
-            ON otra.alumno_id = nueva.alumno_id AND otra.id <> nueva.id
+            ON otra.alumno_id = NEW.alumno_id AND otra.id <> NEW.id
         JOIN deportes AS d_otro ON d_otro.id = otra.deporte_id
-        WHERE (d_nuevo.dias_semana & d_otro.dias_semana) <> 0
+        WHERE d_nuevo.id = NEW.deporte_id
+          AND (d_nuevo.dias_semana & d_otro.dias_semana) <> 0
           AND d_nuevo.hora_inicio < d_otro.hora_fin
           AND d_otro.hora_inicio < d_nuevo.hora_fin
     ) THEN
@@ -258,14 +253,8 @@ BEGIN
     END IF;
 
     -- Cupo máximo del deporte.
-    IF EXISTS (
-        SELECT 1
-        FROM deportes d
-        JOIN inscripciones_deportes i ON i.deporte_id = d.id
-        WHERE d.id IN (SELECT deporte_id FROM inserted)
-        GROUP BY d.id, d.cupo_maximo
-        HAVING COUNT(*) > d.cupo_maximo
-    ) THEN
+    IF (SELECT COUNT(*) FROM inscripciones_deportes WHERE deporte_id = NEW.deporte_id)
+       > (SELECT cupo_maximo FROM deportes WHERE id = NEW.deporte_id) THEN
         RAISE EXCEPTION 'El deporte no tiene cupo disponible.' USING ERRCODE = '50008';
     END IF;
 
@@ -275,8 +264,7 @@ $$ LANGUAGE plpgsql;
 
 CREATE TRIGGER trg_inscripciones_deportes_reglas
     AFTER INSERT OR UPDATE ON inscripciones_deportes
-    REFERENCING NEW TABLE AS inserted
-    FOR EACH STATEMENT
+    FOR EACH ROW
     EXECUTE FUNCTION fn_inscripciones_deportes_reglas();
 
 -- =============================================================================

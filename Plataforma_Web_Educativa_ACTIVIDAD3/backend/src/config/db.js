@@ -26,12 +26,18 @@ if (!process.env.DATABASE_URL) {
     throw new Error('Falta DATABASE_URL en backend/.env (connection string de Supabase/Postgres)');
 }
 
+// Supabase exige TLS con un certificado de una CA pública válida: se valida
+// normalmente (rejectUnauthorized: true, el default de Node). Si alguna vez
+// hiciera falta saltarla (p. ej. un proxy/VPN corporativo con su propio
+// certificado), activarlo a propósito con DATABASE_SSL_INSECURE=true en el
+// .env -nunca como default-, nunca disponible por accidente en producción.
+const ssl = process.env.DATABASE_SSL_INSECURE === 'true'
+    ? { rejectUnauthorized: false }
+    : true;
+
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
-    // Supabase exige TLS; su certificado no está en la cadena de confianza
-    // por defecto de Node, así que no se valida (igual que trustServerCertificate
-    // se usaba en desarrollo con SQL Server).
-    ssl: { rejectUnauthorized: false },
+    ssl,
     max: 10,
     idleTimeoutMillis: 30000
 });

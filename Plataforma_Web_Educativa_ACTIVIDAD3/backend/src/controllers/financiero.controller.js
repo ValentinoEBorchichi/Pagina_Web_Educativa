@@ -15,6 +15,14 @@ function respuestaErrorComprobante(res, status, message) {
     return res.status(status).json({ message });
 }
 
+// nombre_archivo viene del nombre original que subió el usuario: nunca se
+// usa tal cual en una cabecera HTTP (CRLF/comillas podrían inyectar otras
+// cabeceras o romper el Content-Disposition).
+function sanitizarNombreArchivo(nombre) {
+    const limpio = String(nombre || '').replace(/[^\w .-]/g, '').slice(0, 150).trim();
+    return limpio || 'comprobante';
+}
+
 // Recibe el comprobante, calcula SHA-256, evita duplicados y lo registra.
 exports.subirComprobante = async (req, res) => {
     const facturaId = Number.parseInt(req.body.factura_id, 10);
@@ -119,7 +127,7 @@ exports.descargarComprobanteArchivo = async (req, res) => {
 
         const buffer = await descargarArchivo(BUCKET_COMPROBANTES, comprobante.ruta_archivo);
         res.setHeader('Content-Type', comprobante.tipo_mime || 'application/octet-stream');
-        res.setHeader('Content-Disposition', `inline; filename="${comprobante.nombre_archivo}"`);
+        res.setHeader('Content-Disposition', `inline; filename="${sanitizarNombreArchivo(comprobante.nombre_archivo)}"`);
         res.send(buffer);
     } catch (err) {
         manejarErrorPg(res, err);
@@ -231,31 +239,26 @@ exports.deleteTarifa = async (req, res) => {
 exports.getFacturas = async (req, res) => {
     try {
         const pool = await getPool();
-        const condiciones = [];
-        const params = [];
+        // SQL estático y siempre parametrizado (nada de armar el WHERE
+        // concatenando strings): el rol/alumno_id/soloDeuda viajan como
+        // parámetros, nunca como texto dentro de la consulta.
+        const alumnoIdFiltro = req.user.rol === 'admin' && req.query.alumno_id
+            ? parseInt(req.query.alumno_id, 10)
+            : null;
+        const soloDeuda = req.query.soloDeuda === '1';
 
-        if (req.user.rol === 'padre') {
-            params.push(req.user.id);
-            condiciones.push(`a.padre_id = $${params.length}`);
-        } else if (req.user.rol === 'alumno') {
-            params.push(req.user.id);
-            condiciones.push(`a.usuario_id = $${params.length}`);
-        } else if (req.query.alumno_id) {
-            params.push(parseInt(req.query.alumno_id));
-            condiciones.push(`a.id = $${params.length}`);
-        }
-        if (req.query.soloDeuda === '1') {
-            condiciones.push('f.saldo > 0');
-        }
-
-        const where = condiciones.length ? `WHERE ${condiciones.join(' AND ')}` : '';
         const { rows } = await pool.query(
             `SELECT f.*, a.nombre AS alumno_nombre, a.apellido AS alumno_apellido, a.dni AS alumno_dni
              FROM factura f
              JOIN alumnos a ON a.id = f.alumno_id
-             ${where}
+             WHERE (
+                 ($1 = 'padre' AND a.padre_id = $2)
+                 OR ($1 = 'alumno' AND a.usuario_id = $2)
+                 OR ($1 = 'admin' AND ($3::integer IS NULL OR a.id = $3))
+             )
+             AND ($4::boolean IS NOT TRUE OR f.saldo > 0)
              ORDER BY f.periodo DESC, a.apellido, a.nombre`,
-            params
+            [req.user.rol, req.user.id, alumnoIdFiltro, soloDeuda]
         );
         res.json(rows);
     } catch (err) { manejarErrorPg(res, err); }
@@ -297,25 +300,14 @@ exports.getSaldoAlumno = async (req, res) => {
 // --- BANDEJA DE VERIFICACIÓN DE COMPROBANTES ---
 // Admin ve todos (opcionalmente filtrados por ?estado=Pendiente|Aprobado|Rechazado);
 // padre/alumno ven solo los propios (reemplaza al viejo listado de "pagos").
+const ESTADOS_COMPROBANTE = ['Pendiente', 'Aprobado', 'Rechazado'];
+
 exports.getComprobantes = async (req, res) => {
     try {
         const pool = await getPool();
-        const condiciones = [];
-        const params = [];
+        // Mismo criterio que getFacturas: SQL estático, filtros por parámetro.
+        const estadoFiltro = ESTADOS_COMPROBANTE.includes(req.query.estado) ? req.query.estado : null;
 
-        if (req.user.rol === 'padre') {
-            params.push(req.user.id);
-            condiciones.push(`a.padre_id = $${params.length}`);
-        } else if (req.user.rol === 'alumno') {
-            params.push(req.user.id);
-            condiciones.push(`a.usuario_id = $${params.length}`);
-        }
-        if (req.query.estado) {
-            params.push(req.query.estado);
-            condiciones.push(`ct.estado_verificacion = $${params.length}`);
-        }
-
-        const where = condiciones.length ? `WHERE ${condiciones.join(' AND ')}` : '';
         const { rows } = await pool.query(
             `SELECT ct.id, ct.factura_id, ct.nombre_archivo, ct.tipo_mime, ct.monto,
                     ct.fecha_transferencia, ct.estado_verificacion, ct.observaciones, ct.fecha_carga,
@@ -323,9 +315,14 @@ exports.getComprobantes = async (req, res) => {
              FROM comprobante_transferencia ct
              JOIN factura f ON f.id = ct.factura_id
              JOIN alumnos a ON a.id = f.alumno_id
-             ${where}
+             WHERE (
+                 ($1 = 'padre' AND a.padre_id = $2)
+                 OR ($1 = 'alumno' AND a.usuario_id = $2)
+                 OR $1 = 'admin'
+             )
+             AND ($3::varchar IS NULL OR ct.estado_verificacion = $3)
              ORDER BY ct.fecha_carga DESC`,
-            params
+            [req.user.rol, req.user.id, estadoFiltro]
         );
         res.json(rows);
     } catch (err) { manejarErrorPg(res, err); }
