@@ -1,11 +1,39 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Button, SectionList, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, SectionList, StyleSheet, Text, View } from 'react-native';
 import { apiUrl } from '../config';
 
 // HU4: deportes (máximo 2, RF-06) y transporte (RF-09) vigentes del alumno.
 // Parámetros de navegación: { alumnoId }.
 
 const MAX_DEPORTES = 2;
+
+const COLORS = {
+  primary: '#1a5fa8',
+  primaryDark: '#154e8a',
+  accent: '#f5820d',
+  background: '#f8fafc',
+  surface: '#ffffff',
+  text: '#0f172a',
+  muted: '#64748b',
+  border: '#e2e8f0',
+  danger: '#b91c1c',
+};
+
+function Accion({ title, onPress, secondary = false }) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.accion,
+        secondary ? styles.accionSecundaria : styles.accionPrimaria,
+        pressed && styles.presionado,
+      ]}
+    >
+      <Text style={secondary ? styles.textoAccionSecundaria : styles.textoAccion}>{title}</Text>
+    </Pressable>
+  );
+}
 
 async function obtenerServicios(token) {
   const res = await fetch(apiUrl('/api/movil/mis-inscripciones'), {
@@ -55,8 +83,11 @@ export default function ServiciosAlumnoScreen({ route, navigation, token: tokenP
   if (error) {
     return (
       <View style={styles.container}>
-        <Text style={styles.error}>{error}</Text>
-        <Button title="Reintentar" onPress={() => setIntento((n) => n + 1)} />
+        <View style={styles.errorCard}>
+          <Text style={styles.errorTitulo}>No pudimos cargar los servicios</Text>
+          <Text style={styles.error}>{error}</Text>
+          <Accion title="Reintentar" onPress={() => setIntento((n) => n + 1)} />
+        </View>
       </View>
     );
   }
@@ -90,26 +121,36 @@ export default function ServiciosAlumnoScreen({ route, navigation, token: tokenP
   return (
     <SectionList
       style={styles.container}
+      contentContainerStyle={styles.contenido}
       sections={secciones}
       ListHeaderComponent={alumno ? <View>
-        <Text style={styles.periodo}>Servicios de {new Date().toLocaleDateString('es-AR', { month: 'long', year: 'numeric' })}</Text>
-        <Text style={styles.alumno}>{alumno.nombre} {alumno.apellido}</Text>
-        {(datos.alumnos || []).length > 1 ? (datos.alumnos || []).map((hijo) => <Button key={hijo.alumno.id} title={`${hijo.alumno.id === alumnoId ? '✓ ' : ''}${hijo.alumno.nombre} ${hijo.alumno.apellido}`} onPress={() => {
+        <View style={styles.resumen}>
+          <Text style={styles.periodo}>Servicios de {new Date().toLocaleDateString('es-AR', { month: 'long', year: 'numeric' })}</Text>
+          <Text style={styles.alumno}>{alumno.nombre} {alumno.apellido}</Text>
+        </View>
+        {(datos.alumnos || []).length > 1 ? <View style={styles.hijos}>
+          <Text style={styles.etiqueta}>Seleccioná un alumno</Text>
+          {(datos.alumnos || []).map((hijo) => <Pressable key={hijo.alumno.id} onPress={() => {
           setAlumnoId(hijo.alumno.id);
           setDatos({ ...hijo, deportes: (hijo.deportes || []).slice(0, MAX_DEPORTES), alumnos: datos.alumnos });
-        }} />) : null}
-        <Button title="Ver cuotas e historial" onPress={() => navigation.navigate('Cuenta', { alumnoId, token })} />
-        <Button title="Cambiar contraseña" onPress={() => navigation.navigate('CambiarPassword', { token })} />
-        {onLogout ? <Button title="Cerrar sesión" onPress={onLogout} /> : null}
+          }} style={({ pressed }) => [styles.hijo, hijo.alumno.id === alumnoId && styles.hijoActivo, pressed && styles.presionado]}>
+            <Text style={[styles.textoHijo, hijo.alumno.id === alumnoId && styles.textoHijoActivo]}>{hijo.alumno.id === alumnoId ? '✓ ' : ''}{hijo.alumno.nombre} {hijo.alumno.apellido}</Text>
+          </Pressable>)}
+        </View> : null}
+        <View style={styles.acciones}>
+          <Accion title="Ver cuotas e historial" onPress={() => navigation.navigate('Cuenta', { alumnoId, token })} />
+          <Accion title="Cambiar contraseña" secondary onPress={() => navigation.navigate('CambiarPassword', { token })} />
+          {onLogout ? <Accion title="Cerrar sesión" secondary onPress={onLogout} /> : null}
+        </View>
       </View> : null}
-      renderSectionHeader={({ section }) => <Text style={styles.seccion}>{section.titulo}</Text>}
+      renderSectionHeader={({ section }) => <View style={styles.seccionFila}><Text style={styles.seccion}>{section.titulo}</Text></View>}
       renderSectionFooter={({ section }) =>
         section.data.length === 0 ? <Text style={styles.vacio}>{section.vacio}</Text> : null
       }
       renderItem={({ item }) => (
         <View style={styles.item}>
           <Text style={styles.nombre}>{item.nombre}</Text>
-          <Text>{item.detalle}</Text>
+          <Text style={styles.detalle}>{item.detalle}</Text>
         </View>
       )}
     />
@@ -117,13 +158,32 @@ export default function ServiciosAlumnoScreen({ route, navigation, token: tokenP
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16 },
+  container: { flex: 1, backgroundColor: COLORS.background },
+  contenido: { padding: 16, paddingBottom: 32 },
   centro: { flex: 1 },
-  periodo: { color: '#64748b', textTransform: 'capitalize', marginBottom: 4 },
-  alumno: { fontSize: 20, fontWeight: 'bold', marginBottom: 8 },
-  seccion: { fontSize: 16, fontWeight: 'bold', marginTop: 16, marginBottom: 4 },
-  item: { paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#eee' },
-  nombre: { fontSize: 16 },
-  vacio: { color: '#666', fontStyle: 'italic' },
-  error: { color: '#b91c1c', marginBottom: 12 },
+  resumen: { backgroundColor: COLORS.primary, borderRadius: 18, padding: 20, marginBottom: 16 },
+  periodo: { color: '#dbeafe', textTransform: 'capitalize', marginBottom: 8, fontSize: 14, fontWeight: '600' },
+  alumno: { color: COLORS.surface, fontSize: 24, fontWeight: '800' },
+  hijos: { backgroundColor: COLORS.surface, borderRadius: 16, padding: 12, borderWidth: 1, borderColor: COLORS.border, marginBottom: 16 },
+  etiqueta: { color: COLORS.muted, fontSize: 13, fontWeight: '700', marginBottom: 8 },
+  hijo: { paddingVertical: 12, paddingHorizontal: 14, borderRadius: 10, marginBottom: 6, backgroundColor: '#f1f5f9' },
+  hijoActivo: { backgroundColor: '#dbeafe' },
+  textoHijo: { color: COLORS.text, fontWeight: '600' },
+  textoHijoActivo: { color: COLORS.primaryDark, fontWeight: '800' },
+  acciones: { gap: 10, marginBottom: 12 },
+  accion: { minHeight: 48, borderRadius: 12, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16 },
+  accionPrimaria: { backgroundColor: COLORS.primary },
+  accionSecundaria: { backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border },
+  textoAccion: { color: COLORS.surface, fontWeight: '800', fontSize: 15 },
+  textoAccionSecundaria: { color: COLORS.primaryDark, fontWeight: '800', fontSize: 15 },
+  presionado: { opacity: 0.75 },
+  seccionFila: { borderBottomWidth: 1, borderBottomColor: COLORS.border, marginTop: 12, marginBottom: 8, paddingBottom: 8 },
+  seccion: { color: COLORS.text, fontSize: 18, fontWeight: '800' },
+  item: { backgroundColor: COLORS.surface, padding: 14, borderRadius: 12, borderWidth: 1, borderColor: COLORS.border, marginBottom: 8 },
+  nombre: { color: COLORS.text, fontSize: 16, fontWeight: '700' },
+  detalle: { color: COLORS.muted, marginTop: 4 },
+  vacio: { color: COLORS.muted, fontStyle: 'italic', paddingVertical: 4 },
+  errorCard: { backgroundColor: COLORS.surface, borderRadius: 16, padding: 20, margin: 16, borderWidth: 1, borderColor: '#fecaca' },
+  errorTitulo: { color: COLORS.danger, fontSize: 17, fontWeight: '800', marginBottom: 8 },
+  error: { color: COLORS.danger, marginBottom: 16 },
 });
