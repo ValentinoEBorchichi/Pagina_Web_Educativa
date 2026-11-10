@@ -7,6 +7,13 @@ import { apiUrl } from '../config';
 
 const MAX_DEPORTES = 2;
 
+const TEMAS_HIJOS = [
+  { fondo: '#1a5fa8', fondoActivo: '#dbeafe', textoActivo: '#154e8a' },
+  { fondo: '#2e9d68', fondoActivo: '#dcfce7', textoActivo: '#17603d' },
+  { fondo: '#7652a8', fondoActivo: '#f3e8ff', textoActivo: '#5b2f88' },
+  { fondo: '#f5820d', fondoActivo: '#ffedd5', textoActivo: '#a44905' },
+];
+
 const COLORS = {
   primary: '#1a5fa8',
   primaryDark: '#154e8a',
@@ -93,6 +100,8 @@ export default function ServiciosAlumnoScreen({ route, navigation, token: tokenP
   }
 
   const { alumno, deportes = [], transporte } = datos;
+  const indiceAlumno = Math.max(0, (datos.alumnos || []).findIndex((item) => item.alumno.id === alumnoId));
+  const temaAlumno = TEMAS_HIJOS[indiceAlumno % TEMAS_HIJOS.length];
   const secciones = [
     {
       titulo: `Deportes (${deportes.length}/${MAX_DEPORTES})`,
@@ -124,18 +133,22 @@ export default function ServiciosAlumnoScreen({ route, navigation, token: tokenP
       contentContainerStyle={styles.contenido}
       sections={secciones}
       ListHeaderComponent={alumno ? <View>
-        <View style={styles.resumen}>
+        <View style={[styles.resumen, { backgroundColor: temaAlumno.fondo }]}>
           <Text style={styles.periodo}>Servicios de {new Date().toLocaleDateString('es-AR', { month: 'long', year: 'numeric' })}</Text>
           <Text style={styles.alumno}>{alumno.nombre} {alumno.apellido}</Text>
         </View>
         {(datos.alumnos || []).length > 1 ? <View style={styles.hijos}>
           <Text style={styles.etiqueta}>Seleccioná un alumno</Text>
-          {(datos.alumnos || []).map((hijo) => <Pressable key={hijo.alumno.id} onPress={() => {
+          {(datos.alumnos || []).map((hijo, indice) => {
+            const temaHijo = TEMAS_HIJOS[indice % TEMAS_HIJOS.length];
+            const seleccionado = hijo.alumno.id === alumnoId;
+            return <Pressable key={hijo.alumno.id} onPress={() => {
           setAlumnoId(hijo.alumno.id);
           setDatos({ ...hijo, deportes: (hijo.deportes || []).slice(0, MAX_DEPORTES), alumnos: datos.alumnos });
-          }} style={({ pressed }) => [styles.hijo, hijo.alumno.id === alumnoId && styles.hijoActivo, pressed && styles.presionado]}>
-            <Text style={[styles.textoHijo, hijo.alumno.id === alumnoId && styles.textoHijoActivo]}>{hijo.alumno.id === alumnoId ? '✓ ' : ''}{hijo.alumno.nombre} {hijo.alumno.apellido}</Text>
-          </Pressable>)}
+          }} style={({ pressed }) => [styles.hijo, seleccionado && { backgroundColor: temaHijo.fondoActivo, borderLeftColor: temaHijo.fondo }, pressed && styles.presionado]}>
+            <Text style={[styles.textoHijo, seleccionado && { color: temaHijo.textoActivo }]}>{seleccionado ? '✓ ' : ''}{hijo.alumno.nombre} {hijo.alumno.apellido}</Text>
+          </Pressable>;
+          })}
         </View> : null}
         <View style={styles.acciones}>
           <Accion title="Ver cuotas e historial" onPress={() => navigation.navigate('Cuenta', { alumnoId, token })} />
