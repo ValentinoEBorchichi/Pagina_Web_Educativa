@@ -14,6 +14,15 @@ import SubirComprobanteScreen from './src/screens/SubirComprobanteScreen';
 
 const Stack = createNativeStackNavigator();
 
+const COLORS = {
+  primary: '#1a5fa8',
+  primaryDark: '#154e8a',
+  background: '#f8fafc',
+  surface: '#ffffff',
+  text: '#0f172a',
+  muted: '#64748b',
+};
+
 export default function App() {
   const [sesion, setSesion] = useState(null);
   const [cargando, setCargando] = useState(true);
@@ -28,7 +37,12 @@ export default function App() {
 
   return (
     <NavigationContainer>
-      <Stack.Navigator>
+      <Stack.Navigator screenOptions={{
+        headerStyle: { backgroundColor: COLORS.surface },
+        headerTintColor: COLORS.text,
+        headerTitleStyle: { fontWeight: '800' },
+        contentStyle: { backgroundColor: COLORS.background },
+      }}>
         {sesion ? (
           <>
             <Stack.Screen name="ServiciosAlumno" options={{ title: 'Servicios del alumno' }}>
