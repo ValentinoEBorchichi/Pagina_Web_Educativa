@@ -1,5 +1,5 @@
-const { sql, getPool } = require('../config/db');
-const { manejarErrorMssql } = require('../utils/dbErrors');
+const { getPool } = require('../config/db');
+const { manejarErrorPg } = require('../utils/dbErrors');
 
 const TIPOS_VALIDOS = new Set(['cuota', 'deporte', 'transporte', 'comedor']);
 const FECHA_REGEX = /^\d{4}-\d{2}-\d{2}$/;
@@ -46,20 +46,20 @@ function normalizarValor(valor) {
 async function obtenerValoresVigentes(req, res) {
     try {
         const pool = await getPool();
-        const { recordset } = await pool.request().query(`
+        const { rows } = await pool.query(`
             WITH tarifas_vigentes AS (
                 SELECT tc.id, tc.tipo_servicio, tc.monto, tc.vigencia,
                        tc.descripcion, tc.deporte_id, tc.transporte_id,
                        ROW_NUMBER() OVER (
                            PARTITION BY tc.tipo_servicio,
-                                        ISNULL(tc.deporte_id, 0),
-                                        ISNULL(tc.transporte_id, 0)
+                                        COALESCE(tc.deporte_id, 0),
+                                        COALESCE(tc.transporte_id, 0)
                            ORDER BY tc.vigencia DESC, tc.id DESC
                        ) AS numero
-                FROM dbo.TarifaConcepto tc
-                WHERE tc.vigencia <= CAST(GETDATE() AS DATE)
-                  AND (tc.vigencia_hasta IS NULL OR tc.vigencia_hasta >= CAST(GETDATE() AS DATE))
-                  AND tc.activo = 1
+                FROM tarifa_concepto tc
+                WHERE tc.vigencia <= CURRENT_DATE
+                  AND (tc.vigencia_hasta IS NULL OR tc.vigencia_hasta >= CURRENT_DATE)
+                  AND tc.activo = TRUE
             )
             SELECT id, tipo_servicio, monto, vigencia, descripcion, deporte_id, transporte_id
             FROM tarifas_vigentes
@@ -68,13 +68,13 @@ async function obtenerValoresVigentes(req, res) {
         `);
 
         return res.json({
-            cuota: recordset.filter((valor) => valor.tipo_servicio === 'cuota'),
-            deportes: recordset.filter((valor) => valor.tipo_servicio === 'deporte'),
-            transporte: recordset.filter((valor) => valor.tipo_servicio === 'transporte'),
-            comedor: recordset.filter((valor) => valor.tipo_servicio === 'comedor')
+            cuota: rows.filter((valor) => valor.tipo_servicio === 'cuota'),
+            deportes: rows.filter((valor) => valor.tipo_servicio === 'deporte'),
+            transporte: rows.filter((valor) => valor.tipo_servicio === 'transporte'),
+            comedor: rows.filter((valor) => valor.tipo_servicio === 'comedor')
         });
     } catch (err) {
-        return manejarErrorMssql(res, err);
+        return manejarErrorPg(res, err);
     }
 }
 
@@ -92,83 +92,60 @@ async function guardarValores(req, res) {
     }
 
     const pool = await getPool();
-    const transaction = new sql.Transaction(pool);
+    const client = await pool.connect();
 
     try {
-        await transaction.begin();
+        await client.query('BEGIN');
         const guardados = [];
 
         for (const valor of normalizados) {
-            const request = new sql.Request(transaction)
-                .input('tipoServicio', sql.VarChar(20), valor.tipoServicio)
-                .input('monto', sql.Decimal(12, 2), valor.monto)
-                .input('vigencia', sql.Date, valor.vigencia)
-                .input('descripcion', sql.NVarChar(150), valor.descripcion)
-                .input('deporteId', sql.Int, valor.deporteId)
-                .input('transporteId', sql.Int, valor.transporteId);
-
             // Si ya existe el mismo concepto con la misma vigencia, se actualiza
             // solo esa versión. Las vigencias anteriores no se modifican.
-            const actualizado = await request.query(`
-                UPDATE dbo.TarifaConcepto
-                SET monto = @monto,
-                    descripcion = @descripcion,
-                    activo = 1
-                OUTPUT INSERTED.id, INSERTED.tipo_servicio, INSERTED.monto,
-                       INSERTED.vigencia, INSERTED.descripcion,
-                       INSERTED.deporte_id, INSERTED.transporte_id
-                WHERE tipo_servicio = @tipoServicio
-                  AND vigencia = @vigencia
-                  AND ((deporte_id = @deporteId) OR (deporte_id IS NULL AND @deporteId IS NULL))
-                  AND ((transporte_id = @transporteId) OR (transporte_id IS NULL AND @transporteId IS NULL));
-            `);
+            const actualizado = await client.query(`
+                UPDATE tarifa_concepto
+                SET monto = $1,
+                    descripcion = $2,
+                    activo = TRUE
+                WHERE tipo_servicio = $3
+                  AND vigencia = $4
+                  AND ((deporte_id = $5) OR (deporte_id IS NULL AND $5 IS NULL))
+                  AND ((transporte_id = $6) OR (transporte_id IS NULL AND $6 IS NULL))
+                RETURNING id, tipo_servicio, monto, vigencia, descripcion, deporte_id, transporte_id;
+            `, [valor.monto, valor.descripcion, valor.tipoServicio, valor.vigencia, valor.deporteId, valor.transporteId]);
 
-            if (actualizado.recordset.length) {
-                guardados.push(actualizado.recordset[0]);
+            if (actualizado.rows.length) {
+                guardados.push(actualizado.rows[0]);
                 continue;
             }
 
             // Cerramos la vigencia abierta anterior el día previo a la nueva.
-            await new sql.Request(transaction)
-                .input('tipoServicio', sql.VarChar(20), valor.tipoServicio)
-                .input('vigencia', sql.Date, valor.vigencia)
-                .input('deporteId', sql.Int, valor.deporteId)
-                .input('transporteId', sql.Int, valor.transporteId)
-                .query(`
-                    UPDATE dbo.TarifaConcepto
-                    SET vigencia_hasta = DATEADD(day, -1, @vigencia)
-                    WHERE tipo_servicio = @tipoServicio
-                      AND vigencia < @vigencia
-                      AND vigencia_hasta IS NULL
-                      AND activo = 1
-                      AND ((deporte_id = @deporteId) OR (deporte_id IS NULL AND @deporteId IS NULL))
-                      AND ((transporte_id = @transporteId) OR (transporte_id IS NULL AND @transporteId IS NULL));
-                `);
+            await client.query(`
+                UPDATE tarifa_concepto
+                SET vigencia_hasta = $1::date - INTERVAL '1 day'
+                WHERE tipo_servicio = $2
+                  AND vigencia < $1
+                  AND vigencia_hasta IS NULL
+                  AND activo = TRUE
+                  AND ((deporte_id = $3) OR (deporte_id IS NULL AND $3 IS NULL))
+                  AND ((transporte_id = $4) OR (transporte_id IS NULL AND $4 IS NULL));
+            `, [valor.vigencia, valor.tipoServicio, valor.deporteId, valor.transporteId]);
 
-            const insertado = await new sql.Request(transaction)
-                .input('tipoServicio', sql.VarChar(20), valor.tipoServicio)
-                .input('monto', sql.Decimal(12, 2), valor.monto)
-                .input('vigencia', sql.Date, valor.vigencia)
-                .input('descripcion', sql.NVarChar(150), valor.descripcion)
-                .input('deporteId', sql.Int, valor.deporteId)
-                .input('transporteId', sql.Int, valor.transporteId)
-                .query(`
-                    INSERT INTO dbo.TarifaConcepto
-                        (tipo_servicio, monto, vigencia, descripcion, deporte_id, transporte_id, activo)
-                    OUTPUT INSERTED.id, INSERTED.tipo_servicio, INSERTED.monto,
-                           INSERTED.vigencia, INSERTED.descripcion,
-                           INSERTED.deporte_id, INSERTED.transporte_id
-                    VALUES (@tipoServicio, @monto, @vigencia, @descripcion,
-                            @deporteId, @transporteId, 1);
-                `);
-            guardados.push(insertado.recordset[0]);
+            const insertado = await client.query(`
+                INSERT INTO tarifa_concepto
+                    (tipo_servicio, monto, vigencia, descripcion, deporte_id, transporte_id, activo)
+                VALUES ($1, $2, $3, $4, $5, $6, TRUE)
+                RETURNING id, tipo_servicio, monto, vigencia, descripcion, deporte_id, transporte_id;
+            `, [valor.tipoServicio, valor.monto, valor.vigencia, valor.descripcion, valor.deporteId, valor.transporteId]);
+            guardados.push(insertado.rows[0]);
         }
 
-        await transaction.commit();
+        await client.query('COMMIT');
         return res.status(201).json({ valores: guardados });
     } catch (err) {
-        await transaction.rollback().catch(() => undefined);
-        return manejarErrorMssql(res, err);
+        await client.query('ROLLBACK').catch(() => undefined);
+        return manejarErrorPg(res, err);
+    } finally {
+        client.release();
     }
 }
 

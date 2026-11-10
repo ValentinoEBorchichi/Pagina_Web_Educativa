@@ -1,4 +1,4 @@
-const db = require('../config/database');
+const { getPool } = require('../config/db');
 const { NOMBRE_REGEX } = require('../utils/validators');
 const { manejarErrorSQL } = require('../utils/dbErrors');
 
@@ -7,22 +7,30 @@ const { manejarErrorSQL } = require('../utils/dbErrors');
 // profesores a cargo. Se separó de academico.controller.js por la misma
 // razón que alumnos.controller.js y horarios.controller.js.
 
+// inscripciones_extra.alumno_id referencia a alumnos(id) (esquema unificado
+// de Postgres), no al usuario logueado directamente: hay que resolver el
+// legajo del alumno a partir de su cuenta (alumnos.usuario_id = req.user.id).
+async function resolverAlumnoId(pool, usuarioId) {
+    const { rows } = await pool.query('SELECT id FROM alumnos WHERE usuario_id = $1', [usuarioId]);
+    return rows[0] ? rows[0].id : null;
+}
+
 // --- ACTIVIDADES EXTRACURRICULARES ---
 // Lista las actividades con la cantidad de inscriptos (para mostrar cupo disponible).
-exports.getActividades = (req, res) => {
-    const query = `
-        SELECT actividades_extra.*,
-               (SELECT COUNT(*) FROM inscripciones_extra WHERE actividad_id = actividades_extra.id) as inscriptos
-        FROM actividades_extra
-        ORDER BY tipo, nombre
-    `;
-    db.all(query, [], (err, rows) => {
-        if (err) return manejarErrorSQL(res, err);
+exports.getActividades = async (req, res) => {
+    try {
+        const pool = await getPool();
+        const { rows } = await pool.query(`
+            SELECT actividades_extra.*,
+                   (SELECT COUNT(*) FROM inscripciones_extra WHERE actividad_id = actividades_extra.id) as inscriptos
+            FROM actividades_extra
+            ORDER BY tipo, nombre
+        `);
         res.json(rows);
-    });
+    } catch (err) { manejarErrorSQL(res, err); }
 };
 
-exports.createActividad = (req, res) => {
+exports.createActividad = async (req, res) => {
     const nombre = (req.body.nombre || '').trim();
     const { tipo, horario, cupo_max } = req.body;
     if (!nombre || !tipo || cupo_max === undefined || cupo_max === null || cupo_max === '') {
@@ -33,17 +41,17 @@ exports.createActividad = (req, res) => {
     if (!Number.isInteger(cupoNum) || cupoNum <= 0) {
         return res.status(400).json({ message: "El cupo debe ser un número entero mayor a 0" });
     }
-    db.run(
-        "INSERT INTO actividades_extra (nombre, tipo, horario, cupo_max) VALUES (?, ?, ?, ?)",
-        [nombre, tipo, horario || null, cupoNum],
-        function(err) {
-            if (err) return manejarErrorSQL(res, err);
-            res.status(201).json({ id: this.lastID });
-        }
-    );
+    try {
+        const pool = await getPool();
+        const { rows } = await pool.query(
+            "INSERT INTO actividades_extra (nombre, tipo, horario, cupo_max) VALUES ($1, $2, $3, $4) RETURNING id",
+            [nombre, tipo, horario || null, cupoNum]
+        );
+        res.status(201).json({ id: rows[0].id });
+    } catch (err) { manejarErrorSQL(res, err); }
 };
 
-exports.updateActividad = (req, res) => {
+exports.updateActividad = async (req, res) => {
     const { id } = req.params;
     const nombre = (req.body.nombre || '').trim();
     const { tipo, horario, cupo_max } = req.body;
@@ -55,120 +63,122 @@ exports.updateActividad = (req, res) => {
     if (!Number.isInteger(cupoNum) || cupoNum <= 0) {
         return res.status(400).json({ message: "El cupo debe ser un número entero mayor a 0" });
     }
-    db.run(
-        "UPDATE actividades_extra SET nombre = ?, tipo = ?, horario = ?, cupo_max = ? WHERE id = ?",
-        [nombre, tipo, horario || null, cupoNum, id],
-        function(err) {
-            if (err) return manejarErrorSQL(res, err);
-            if (this.changes === 0) return res.status(404).json({ message: "Actividad no encontrada" });
-            res.json({ message: "Actividad actualizada correctamente" });
-        }
-    );
+    try {
+        const pool = await getPool();
+        const { rowCount } = await pool.query(
+            "UPDATE actividades_extra SET nombre = $1, tipo = $2, horario = $3, cupo_max = $4 WHERE id = $5",
+            [nombre, tipo, horario || null, cupoNum, id]
+        );
+        if (rowCount === 0) return res.status(404).json({ message: "Actividad no encontrada" });
+        res.json({ message: "Actividad actualizada correctamente" });
+    } catch (err) { manejarErrorSQL(res, err); }
 };
 
-exports.deleteActividad = (req, res) => {
+exports.deleteActividad = async (req, res) => {
     const { id } = req.params;
-    db.run("DELETE FROM actividades_extra WHERE id = ?", [id], function(err) {
-        if (err) return manejarErrorSQL(res, err);
-        if (this.changes === 0) return res.status(404).json({ message: "Actividad no encontrada" });
+    try {
+        const pool = await getPool();
+        const { rowCount } = await pool.query("DELETE FROM actividades_extra WHERE id = $1", [id]);
+        if (rowCount === 0) return res.status(404).json({ message: "Actividad no encontrada" });
         res.json({ message: "Actividad eliminada correctamente" });
-    });
+    } catch (err) { manejarErrorSQL(res, err); }
 };
 
 // El alumno se inscribe a una actividad. Valida cupo y que no se inscriba dos veces.
-// La inscripción se guarda contra el usuario logueado (req.user.id).
-exports.inscribirActividad = (req, res) => {
+// La inscripción se guarda contra el legajo de alumno vinculado al usuario logueado.
+exports.inscribirActividad = async (req, res) => {
     const actividad_id = parseInt(req.body.actividad_id);
-    const alumno_id = req.user.id;
     if (!actividad_id) return res.status(400).json({ message: "Actividad inválida" });
 
-    db.get("SELECT cupo_max FROM actividades_extra WHERE id = ?", [actividad_id], (err, actividad) => {
-        if (err) return manejarErrorSQL(res, err);
+    try {
+        const pool = await getPool();
+        const alumno_id = await resolverAlumnoId(pool, req.user.id);
+        if (!alumno_id) return res.status(403).json({ message: "Tu cuenta no está vinculada a un legajo de alumno" });
+
+        const { rows: actividadRows } = await pool.query("SELECT cupo_max FROM actividades_extra WHERE id = $1", [actividad_id]);
+        const actividad = actividadRows[0];
         if (!actividad) return res.status(404).json({ message: "La actividad no existe" });
 
-        db.get(
-            "SELECT COUNT(*) as total FROM inscripciones_extra WHERE actividad_id = ?",
-            [actividad_id],
-            (err, row) => {
-                if (err) return manejarErrorSQL(res, err);
-                if (row.total >= actividad.cupo_max) {
-                    return res.status(400).json({ message: "No hay cupos disponibles en esta actividad" });
-                }
-
-                db.get(
-                    "SELECT id FROM inscripciones_extra WHERE actividad_id = ? AND alumno_id = ?",
-                    [actividad_id, alumno_id],
-                    (err, existe) => {
-                        if (err) return manejarErrorSQL(res, err);
-                        if (existe) return res.status(400).json({ message: "Ya estás inscripto en esta actividad" });
-
-                        db.run(
-                            "INSERT INTO inscripciones_extra (alumno_id, actividad_id) VALUES (?, ?)",
-                            [alumno_id, actividad_id],
-                            function(err) {
-                                if (err) return manejarErrorSQL(res, err);
-                                res.status(201).json({ message: "Inscripción realizada con éxito", id: this.lastID });
-                            }
-                        );
-                    }
-                );
-            }
+        const { rows: totalRows } = await pool.query(
+            "SELECT COUNT(*) as total FROM inscripciones_extra WHERE actividad_id = $1",
+            [actividad_id]
         );
-    });
+        if (Number(totalRows[0].total) >= actividad.cupo_max) {
+            return res.status(400).json({ message: "No hay cupos disponibles en esta actividad" });
+        }
+
+        const { rows: existeRows } = await pool.query(
+            "SELECT id FROM inscripciones_extra WHERE actividad_id = $1 AND alumno_id = $2",
+            [actividad_id, alumno_id]
+        );
+        if (existeRows[0]) return res.status(400).json({ message: "Ya estás inscripto en esta actividad" });
+
+        const { rows } = await pool.query(
+            "INSERT INTO inscripciones_extra (alumno_id, actividad_id) VALUES ($1, $2) RETURNING id",
+            [alumno_id, actividad_id]
+        );
+        res.status(201).json({ message: "Inscripción realizada con éxito", id: rows[0].id });
+    } catch (err) { manejarErrorSQL(res, err); }
 };
 
 // Lista las actividades en las que está inscripto el alumno logueado.
-exports.getMisInscripciones = (req, res) => {
-    const query = `
-        SELECT inscripciones_extra.id as inscripcion_id, actividades_extra.*
-        FROM inscripciones_extra
-        JOIN actividades_extra ON inscripciones_extra.actividad_id = actividades_extra.id
-        WHERE inscripciones_extra.alumno_id = ?
-        ORDER BY actividades_extra.tipo, actividades_extra.nombre
-    `;
-    db.all(query, [req.user.id], (err, rows) => {
-        if (err) return manejarErrorSQL(res, err);
+exports.getMisInscripciones = async (req, res) => {
+    try {
+        const pool = await getPool();
+        const alumno_id = await resolverAlumnoId(pool, req.user.id);
+        if (!alumno_id) return res.json([]);
+
+        const { rows } = await pool.query(`
+            SELECT inscripciones_extra.id as inscripcion_id, actividades_extra.*
+            FROM inscripciones_extra
+            JOIN actividades_extra ON inscripciones_extra.actividad_id = actividades_extra.id
+            WHERE inscripciones_extra.alumno_id = $1
+            ORDER BY actividades_extra.tipo, actividades_extra.nombre
+        `, [alumno_id]);
         res.json(rows);
-    });
+    } catch (err) { manejarErrorSQL(res, err); }
 };
 
 // El alumno cancela su inscripción a una actividad.
-exports.desinscribirActividad = (req, res) => {
+exports.desinscribirActividad = async (req, res) => {
     const { actividad_id } = req.params;
-    db.run(
-        "DELETE FROM inscripciones_extra WHERE actividad_id = ? AND alumno_id = ?",
-        [actividad_id, req.user.id],
-        function(err) {
-            if (err) return manejarErrorSQL(res, err);
-            if (this.changes === 0) return res.status(404).json({ message: "No estabas inscripto en esta actividad" });
-            res.json({ message: "Inscripción cancelada" });
-        }
-    );
+    try {
+        const pool = await getPool();
+        const alumno_id = await resolverAlumnoId(pool, req.user.id);
+        if (!alumno_id) return res.status(403).json({ message: "Tu cuenta no está vinculada a un legajo de alumno" });
+
+        const { rowCount } = await pool.query(
+            "DELETE FROM inscripciones_extra WHERE actividad_id = $1 AND alumno_id = $2",
+            [actividad_id, alumno_id]
+        );
+        if (rowCount === 0) return res.status(404).json({ message: "No estabas inscripto en esta actividad" });
+        res.json({ message: "Inscripción cancelada" });
+    } catch (err) { manejarErrorSQL(res, err); }
 };
 
 
 // --- ASISTENCIA Y NOTAS DE ACTIVIDADES EXTRACURRICULARES (profesores) ---
-// Las inscripciones (inscripciones_extra.alumno_id) referencian al usuario alumno
-// que se inscribió, por eso se obtiene el nombre desde la tabla users.
-exports.getInscriptosActividad = (req, res) => {
+// Las inscripciones (inscripciones_extra.alumno_id) referencian el legajo del
+// alumno (tabla `alumnos`), por eso el nombre se obtiene de ahí.
+exports.getInscriptosActividad = async (req, res) => {
     const { actividad_id } = req.params;
-    const query = `
-        SELECT ie.alumno_id, users.nombre AS alumno_nombre, ie.fecha_inscripcion,
-               (SELECT nota FROM actividad_calificaciones
-                 WHERE actividad_id = ie.actividad_id AND alumno_id = ie.alumno_id
-                 ORDER BY id DESC LIMIT 1) AS ultima_nota
-        FROM inscripciones_extra ie
-        JOIN users ON ie.alumno_id = users.id
-        WHERE ie.actividad_id = ?
-        ORDER BY users.nombre
-    `;
-    db.all(query, [actividad_id], (err, rows) => {
-        if (err) return manejarErrorSQL(res, err);
+    try {
+        const pool = await getPool();
+        const { rows } = await pool.query(`
+            SELECT ie.alumno_id, (al.nombre || ' ' || al.apellido) AS alumno_nombre, ie.fecha_inscripcion,
+                   (SELECT nota FROM actividad_calificaciones
+                     WHERE actividad_id = ie.actividad_id AND alumno_id = ie.alumno_id
+                     ORDER BY id DESC LIMIT 1) AS ultima_nota
+            FROM inscripciones_extra ie
+            JOIN alumnos al ON ie.alumno_id = al.id
+            WHERE ie.actividad_id = $1
+            ORDER BY al.apellido, al.nombre
+        `, [actividad_id]);
         res.json(rows);
-    });
+    } catch (err) { manejarErrorSQL(res, err); }
 };
 
-exports.registrarAsistenciaActividad = (req, res) => {
+exports.registrarAsistenciaActividad = async (req, res) => {
     const { actividad_id, alumno_id, fecha, estado } = req.body;
     if (!actividad_id || !alumno_id || !estado) {
         return res.status(400).json({ message: "Datos incompletos" });
@@ -176,17 +186,17 @@ exports.registrarAsistenciaActividad = (req, res) => {
     if (!['Presente', 'Ausente', 'Tarde'].includes(estado)) {
         return res.status(400).json({ message: "Estado inválido" });
     }
-    db.run(
-        "INSERT INTO actividad_asistencias (actividad_id, alumno_id, fecha, estado) VALUES (?, ?, ?, ?)",
-        [actividad_id, alumno_id, fecha || null, estado],
-        function(err) {
-            if (err) return manejarErrorSQL(res, err);
-            res.status(201).json({ id: this.lastID });
-        }
-    );
+    try {
+        const pool = await getPool();
+        const { rows } = await pool.query(
+            "INSERT INTO actividad_asistencias (actividad_id, alumno_id, fecha, estado) VALUES ($1, $2, $3, $4) RETURNING id",
+            [actividad_id, alumno_id, fecha || null, estado]
+        );
+        res.status(201).json({ id: rows[0].id });
+    } catch (err) { manejarErrorSQL(res, err); }
 };
 
-exports.cargarCalificacionActividad = (req, res) => {
+exports.cargarCalificacionActividad = async (req, res) => {
     const { actividad_id, alumno_id, nota } = req.body;
     if (!actividad_id || !alumno_id) {
         return res.status(400).json({ message: "Datos incompletos" });
@@ -202,12 +212,12 @@ exports.cargarCalificacionActividad = (req, res) => {
     if (notaNum < 1 || notaNum > 10) {
         return res.status(400).json({ message: "La nota debe estar en el rango de 1 a 10" });
     }
-    db.run(
-        "INSERT INTO actividad_calificaciones (actividad_id, alumno_id, nota) VALUES (?, ?, ?)",
-        [actividad_id, alumno_id, notaNum],
-        function(err) {
-            if (err) return manejarErrorSQL(res, err);
-            res.status(201).json({ id: this.lastID });
-        }
-    );
+    try {
+        const pool = await getPool();
+        const { rows } = await pool.query(
+            "INSERT INTO actividad_calificaciones (actividad_id, alumno_id, nota) VALUES ($1, $2, $3) RETURNING id",
+            [actividad_id, alumno_id, notaNum]
+        );
+        res.status(201).json({ id: rows[0].id });
+    } catch (err) { manejarErrorSQL(res, err); }
 };

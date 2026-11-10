@@ -1,5 +1,5 @@
-const { sql, getPool } = require('../config/db');
-const { manejarErrorMssql } = require('../utils/dbErrors');
+const { getPool } = require('../config/db');
+const { manejarErrorPg } = require('../utils/dbErrors');
 
 const FECHA_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -19,12 +19,6 @@ function obtenerRango(req, res) {
     return { desde, hasta };
 }
 
-function prepararConsulta(pool, rango) {
-    return pool.request()
-        .input('desde', sql.Date, rango.desde)
-        .input('hasta', sql.Date, rango.hasta);
-}
-
 // HU12-01: ingresos reconocidos por período y alumno.
 exports.obtenerIngresos = async (req, res) => {
     const rango = obtenerRango(req, res);
@@ -32,24 +26,24 @@ exports.obtenerIngresos = async (req, res) => {
 
     try {
         const pool = await getPool();
-        const { recordset } = await prepararConsulta(pool, rango).query(`
+        const { rows } = await pool.query(`
             SELECT f.periodo,
-                   YEAR(f.periodo) AS anio,
+                   EXTRACT(YEAR FROM f.periodo)::int AS anio,
                    a.id AS alumno_id,
                    CONCAT(a.apellido, ', ', a.nombre) AS alumno,
                    SUM(f.total) AS total_facturado,
                    SUM(f.total - f.saldo) AS ingresos,
                    SUM(f.saldo) AS saldo_pendiente
-            FROM dbo.Factura f
-            INNER JOIN dbo.Alumnos a ON a.id = f.alumno_id
-            WHERE f.periodo BETWEEN @desde AND @hasta
+            FROM factura f
+            INNER JOIN alumnos a ON a.id = f.alumno_id
+            WHERE f.periodo BETWEEN $1 AND $2
               AND f.estado <> 'Anulada'
             GROUP BY f.periodo, a.id, a.apellido, a.nombre
             ORDER BY f.periodo, a.apellido, a.nombre;
-        `);
-        return res.json(recordset);
+        `, [rango.desde, rango.hasta]);
+        return res.json(rows);
     } catch (err) {
-        return manejarErrorMssql(res, err);
+        return manejarErrorPg(res, err);
     }
 };
 
@@ -60,23 +54,23 @@ exports.obtenerPagosCompletos = async (req, res) => {
 
     try {
         const pool = await getPool();
-        const { recordset } = await prepararConsulta(pool, rango).query(`
-            SELECT YEAR(f.periodo) AS anio,
+        const { rows } = await pool.query(`
+            SELECT EXTRACT(YEAR FROM f.periodo)::int AS anio,
                    a.id AS alumno_id,
                    CONCAT(a.apellido, ', ', a.nombre) AS alumno,
                    COUNT(f.id) AS facturas_pagadas,
                    SUM(f.total) AS total_pagado
-            FROM dbo.Factura f
-            INNER JOIN dbo.Alumnos a ON a.id = f.alumno_id
-            WHERE f.periodo BETWEEN @desde AND @hasta
+            FROM factura f
+            INNER JOIN alumnos a ON a.id = f.alumno_id
+            WHERE f.periodo BETWEEN $1 AND $2
               AND f.estado <> 'Anulada'
               AND f.saldo = 0
-            GROUP BY YEAR(f.periodo), a.id, a.apellido, a.nombre
+            GROUP BY EXTRACT(YEAR FROM f.periodo), a.id, a.apellido, a.nombre
             ORDER BY anio, a.apellido, a.nombre;
-        `);
-        return res.json(recordset);
+        `, [rango.desde, rango.hasta]);
+        return res.json(rows);
     } catch (err) {
-        return manejarErrorMssql(res, err);
+        return manejarErrorPg(res, err);
     }
 };
 
@@ -87,25 +81,25 @@ exports.obtenerPagosIncompletos = async (req, res) => {
 
     try {
         const pool = await getPool();
-        const { recordset } = await prepararConsulta(pool, rango).query(`
-            SELECT YEAR(f.periodo) AS anio,
+        const { rows } = await pool.query(`
+            SELECT EXTRACT(YEAR FROM f.periodo)::int AS anio,
                    a.id AS alumno_id,
                    CONCAT(a.apellido, ', ', a.nombre) AS alumno,
                    COUNT(f.id) AS facturas_con_deuda,
                    SUM(f.total - f.saldo) AS total_pagado,
                    SUM(f.saldo) AS deuda_pendiente
-            FROM dbo.Factura f
-            INNER JOIN dbo.Alumnos a ON a.id = f.alumno_id
-            WHERE f.periodo BETWEEN @desde AND @hasta
+            FROM factura f
+            INNER JOIN alumnos a ON a.id = f.alumno_id
+            WHERE f.periodo BETWEEN $1 AND $2
               AND f.estado <> 'Anulada'
               AND f.saldo > 0
               AND f.saldo < f.total
-            GROUP BY YEAR(f.periodo), a.id, a.apellido, a.nombre
+            GROUP BY EXTRACT(YEAR FROM f.periodo), a.id, a.apellido, a.nombre
             ORDER BY anio, deuda_pendiente DESC, a.apellido, a.nombre;
-        `);
-        return res.json(recordset);
+        `, [rango.desde, rango.hasta]);
+        return res.json(rows);
     } catch (err) {
-        return manejarErrorMssql(res, err);
+        return manejarErrorPg(res, err);
     }
 };
 
@@ -116,12 +110,12 @@ exports.obtenerPagosDeportes = async (req, res) => {
 
     try {
         const pool = await getPool();
-        const { recordset } = await prepararConsulta(pool, rango).query(`
-            SELECT YEAR(f.periodo) AS anio,
+        const { rows } = await pool.query(`
+            SELECT EXTRACT(YEAR FROM f.periodo)::int AS anio,
                    f.periodo,
                    a.id AS alumno_id,
                    CONCAT(a.apellido, ', ', a.nombre) AS alumno,
-                   c.nivel AS nivel,
+                   n.nombre AS nivel,
                    d.id AS deporte_id,
                    d.nombre AS deporte,
                    d.dias_semana,
@@ -133,24 +127,25 @@ exports.obtenerPagosDeportes = async (req, res) => {
                         ELSE fd.subtotal * (f.total - f.saldo) / f.total
                    END AS importe_pagado,
                    f.estado
-            FROM dbo.Factura f
-            INNER JOIN dbo.Alumnos a ON a.id = f.alumno_id
-            INNER JOIN dbo.Cursos c ON c.id = a.curso_id
-            INNER JOIN dbo.FacturaDetalle fd ON fd.factura_id = f.id
-            INNER JOIN dbo.TarifaConcepto tc ON tc.id = fd.tarifa_concepto_id
-                                             AND tc.tipo_servicio = 'deporte'
-            INNER JOIN dbo.Deportes d ON d.id = tc.deporte_id
-            INNER JOIN dbo.Inscripciones_Deportes i ON i.alumno_id = a.id
-                                                     AND i.deporte_id = d.id
-            LEFT JOIN dbo.Profesores p ON p.id = d.profesor_id
-            LEFT JOIN dbo.Usuarios u ON u.id = p.usuario_id
-            WHERE f.periodo BETWEEN @desde AND @hasta
+            FROM factura f
+            INNER JOIN alumnos a ON a.id = f.alumno_id
+            INNER JOIN cursos c ON c.id = a.curso_id
+            LEFT JOIN niveles n ON n.id = c.nivel_id
+            INNER JOIN factura_detalle fd ON fd.factura_id = f.id
+            INNER JOIN tarifa_concepto tc ON tc.id = fd.tarifa_concepto_id
+                                          AND tc.tipo_servicio = 'deporte'
+            INNER JOIN deportes d ON d.id = tc.deporte_id
+            INNER JOIN inscripciones_deportes i ON i.alumno_id = a.id
+                                                 AND i.deporte_id = d.id
+            LEFT JOIN profesores p ON p.id = d.profesor_id
+            LEFT JOIN usuarios u ON u.id = p.usuario_id
+            WHERE f.periodo BETWEEN $1 AND $2
               AND f.estado <> 'Anulada'
             ORDER BY f.periodo, a.apellido, a.nombre, d.nombre;
-        `);
-        return res.json(recordset);
+        `, [rango.desde, rango.hasta]);
+        return res.json(rows);
     } catch (err) {
-        return manejarErrorMssql(res, err);
+        return manejarErrorPg(res, err);
     }
 };
 
@@ -161,8 +156,8 @@ exports.obtenerPagosTransporte = async (req, res) => {
 
     try {
         const pool = await getPool();
-        const { recordset } = await prepararConsulta(pool, rango).query(`
-            SELECT YEAR(f.periodo) AS anio,
+        const { rows } = await pool.query(`
+            SELECT EXTRACT(YEAR FROM f.periodo)::int AS anio,
                    f.periodo,
                    t.numero_recorrido,
                    t.nombre AS recorrido,
@@ -173,19 +168,19 @@ exports.obtenerPagosTransporte = async (req, res) => {
                         ELSE fd.subtotal * (f.total - f.saldo) / f.total
                    END AS importe_pagado,
                    f.estado
-            FROM dbo.Factura f
-            INNER JOIN dbo.Alumnos a ON a.id = f.alumno_id
-            INNER JOIN dbo.Transportes t ON t.id = a.transporte_id
-            INNER JOIN dbo.FacturaDetalle fd ON fd.factura_id = f.id
-            INNER JOIN dbo.TarifaConcepto tc ON tc.id = fd.tarifa_concepto_id
-                                             AND tc.tipo_servicio = 'transporte'
-                                             AND tc.transporte_id = t.id
-            WHERE f.periodo BETWEEN @desde AND @hasta
+            FROM factura f
+            INNER JOIN alumnos a ON a.id = f.alumno_id
+            INNER JOIN transportes t ON t.id = a.transporte_id
+            INNER JOIN factura_detalle fd ON fd.factura_id = f.id
+            INNER JOIN tarifa_concepto tc ON tc.id = fd.tarifa_concepto_id
+                                          AND tc.tipo_servicio = 'transporte'
+                                          AND tc.transporte_id = t.id
+            WHERE f.periodo BETWEEN $1 AND $2
               AND f.estado <> 'Anulada'
             ORDER BY f.periodo, t.numero_recorrido, a.apellido, a.nombre;
-        `);
-        return res.json(recordset);
+        `, [rango.desde, rango.hasta]);
+        return res.json(rows);
     } catch (err) {
-        return manejarErrorMssql(res, err);
+        return manejarErrorPg(res, err);
     }
 };

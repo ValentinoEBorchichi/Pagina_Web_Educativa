@@ -1,37 +1,25 @@
 const crypto = require('crypto');
-const fs = require('fs/promises');
-const path = require('path');
-
-const BASE_PATH = path.resolve(__dirname, '../../uploads/comprobantes');
-const BASE_PREFIX = `${BASE_PATH}${path.sep}`;
+const { subirArchivo, eliminarArchivo, BUCKET_COMPROBANTES } = require('../config/supabaseStorage');
 
 function calcularHash(archivo) {
     return crypto.createHash('sha256').update(archivo.buffer).digest('hex');
 }
 
+// Sube el comprobante a Supabase Storage (bucket privado) en vez de guardarlo
+// en disco (en Render el disco es efímero). rutaArchivo es la clave del
+// objeto dentro del bucket, no un path del filesystem.
 async function guardarComprobante(archivo) {
-    const nombreArchivo = path.basename(archivo.originalname || 'comprobante');
     const hashArchivo = calcularHash(archivo);
-    const nombreFisico = crypto.randomUUID();
-    const rutaArchivo = path.normalize(path.join(BASE_PATH, nombreFisico));
+    const rutaArchivo = crypto.randomUUID();
 
-    if (!rutaArchivo.startsWith(BASE_PREFIX)) {
-        throw new Error('Ruta de archivo no permitida');
-    }
+    await subirArchivo(BUCKET_COMPROBANTES, rutaArchivo, archivo.buffer, archivo.mimetype);
 
-    await fs.mkdir(BASE_PATH, { recursive: true });
-    await fs.writeFile(rutaArchivo, archivo.buffer, { flag: 'wx' });
-
-    return { nombreArchivo, hashArchivo, rutaArchivo };
+    return { nombreArchivo: archivo.originalname || 'comprobante', hashArchivo, rutaArchivo };
 }
 
 async function eliminarComprobante(rutaArchivo) {
     if (!rutaArchivo) return;
-
-    const rutaNormalizada = path.normalize(rutaArchivo);
-    if (!rutaNormalizada.startsWith(BASE_PREFIX)) return;
-
-    await fs.unlink(rutaNormalizada).catch(() => undefined);
+    await eliminarArchivo(BUCKET_COMPROBANTES, rutaArchivo);
 }
 
 module.exports = { calcularHash, guardarComprobante, eliminarComprobante };

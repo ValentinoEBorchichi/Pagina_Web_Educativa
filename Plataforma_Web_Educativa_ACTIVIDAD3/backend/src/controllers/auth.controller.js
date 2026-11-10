@@ -1,21 +1,23 @@
 const bcrypt = require('bcryptjs');
-const { sql, getPool } = require('../config/db');
+const { getPool } = require('../config/db');
 const { ROLES, firmarToken } = require('../config/auth');
 const { NOMBRE_REGEX } = require('../utils/validators');
-const { manejarErrorMssql } = require('../utils/dbErrors');
+const { manejarErrorPg } = require('../utils/dbErrors');
 const crypto = require('crypto');
 const { enviarRecuperacionPassword } = require('../services/email.service');
 
 const hashTokenRecuperacion = (token) => crypto.createHash('sha256').update(token).digest('hex');
 
-// Autenticación y gestión de usuarios (RF-01) sobre SQL Server (tabla Usuarios).
-// Las respuestas mantienen la forma que ya consume el frontend: un único campo
-// "nombre" (nombre completo) y "created_at".
+// Autenticación y gestión de usuarios (RF-01) sobre la tabla unificada
+// `usuarios` (Postgres/Supabase). Las respuestas mantienen la forma que ya
+// consume el frontend: un único campo "nombre" (nombre completo) y "created_at".
 
-// Largo máximo de Usuarios.username (el registro familiar usa el correo).
+// Largo máximo de usuarios.username (el registro familiar usa el correo).
 const USERNAME_MAX = 50;
 
 // Nombre completo para mostrar, armado desde las columnas nombre + apellido.
+// CONCAT es NULL-safe en Postgres (igual que en SQL Server): un apellido NULL
+// no rompe el armado del nombre completo.
 const NOMBRE_COMPLETO = "LTRIM(CONCAT(nombre, ' ', apellido))";
 
 // Política de complejidad de contraseña (solo para crear/registrar cuentas nuevas).
@@ -28,7 +30,7 @@ const validarPassword = (pw) => {
     return '';
 };
 
-// El frontend envía el nombre completo en un solo campo; Usuarios lo guarda en
+// El frontend envía el nombre completo en un solo campo; usuarios lo guarda en
 // nombre + apellido. Si no llega "apellido", se toma la última palabra.
 const separarNombre = (nombreCompleto, apellido) => {
     const partes = nombreCompleto.split(' ');
@@ -42,20 +44,15 @@ const limpiarTexto = (valor) => String(valor || '').trim().replace(/\s+/g, ' ');
 async function insertarUsuario({ username, password, nombre, apellido, email, rol }) {
     const hash = await bcrypt.hash(password, 10);
     const pool = await getPool();
-    const { recordset } = await pool.request()
-        .input('username', sql.VarChar(USERNAME_MAX), username)
-        .input('hash', sql.VarChar(100), hash)
-        .input('nombre', sql.NVarChar(100), nombre)
-        .input('apellido', sql.NVarChar(100), apellido)
-        .input('email', sql.VarChar(150), email)
-        .input('rol', sql.VarChar(20), rol)
-        .query(`INSERT INTO Usuarios (username, password_hash, nombre, apellido, email, rol)
-                OUTPUT INSERTED.id
-                VALUES (@username, @hash, @nombre, @apellido, @email, @rol)`);
-    return recordset[0].id;
+    const { rows } = await pool.query(
+        `INSERT INTO usuarios (username, password_hash, nombre, apellido, email, rol)
+         VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+        [username, hash, nombre, apellido, email, rol]
+    );
+    return rows[0].id;
 }
 
-const esDuplicado = (err) => err.number === 2627 || err.number === 2601;
+const esDuplicado = (err) => err.code === '23505';
 
 // Registro de cuenta familiar (rol "padre").
 // El usuario se registra con su correo y una contraseña. El correo se usa
@@ -95,7 +92,7 @@ exports.registroFamiliar = async (req, res) => {
         if (esDuplicado(err)) {
             return res.status(409).json({ message: 'Ya existe una cuenta con ese correo' });
         }
-        manejarErrorMssql(res, err);
+        manejarErrorPg(res, err);
     }
 };
 
@@ -109,14 +106,15 @@ exports.login = async (req, res) => {
 
     try {
         const pool = await getPool();
-        const { recordset } = await pool.request()
-            .input('dni', sql.VarChar(20), dni)
-            .query(`SELECT u.id, u.username, u.password_hash, ${NOMBRE_COMPLETO.replaceAll('nombre', 'u.nombre').replaceAll('apellido', 'u.apellido')} AS nombre, u.rol, u.activo,
-                           CASE WHEN u.rol = 'padre' THEN u.id ELSE NULL END AS padre_id
-                    FROM Usuarios u
-                    LEFT JOIN Alumnos a ON a.usuario_id = u.id
-                    WHERE u.username = @dni OR a.dni = @dni`);
-        const user = recordset[0];
+        const { rows } = await pool.query(
+            `SELECT u.id, u.username, u.password_hash, ${NOMBRE_COMPLETO.replaceAll('nombre', 'u.nombre').replaceAll('apellido', 'u.apellido')} AS nombre, u.rol, u.activo,
+                    CASE WHEN u.rol = 'padre' THEN u.id ELSE NULL END AS padre_id
+             FROM usuarios u
+             LEFT JOIN alumnos a ON a.usuario_id = u.id
+             WHERE u.username = $1 OR a.dni = $1`,
+            [dni]
+        );
+        const user = rows[0];
 
         if (!user || !(await bcrypt.compare(String(password), user.password_hash))) {
             return res.status(401).json({ message: 'Credenciales inválidas' });
@@ -135,21 +133,22 @@ exports.login = async (req, res) => {
             }
         });
     } catch (err) {
-        manejarErrorMssql(res, err);
+        manejarErrorPg(res, err);
     }
 };
 
 exports.getMe = async (req, res) => {
     try {
         const pool = await getPool();
-        const { recordset } = await pool.request()
-            .input('id', sql.Int, req.user.id)
-            .query(`SELECT id, username, ${NOMBRE_COMPLETO} AS nombre, rol, fecha_creacion AS created_at
-                    FROM Usuarios WHERE id = @id`);
-        if (!recordset[0]) return res.status(404).json({ message: 'Usuario no encontrado' });
-        res.json(recordset[0]);
+        const { rows } = await pool.query(
+            `SELECT id, username, ${NOMBRE_COMPLETO} AS nombre, rol, fecha_creacion AS created_at
+             FROM usuarios WHERE id = $1`,
+            [req.user.id]
+        );
+        if (!rows[0]) return res.status(404).json({ message: 'Usuario no encontrado' });
+        res.json(rows[0]);
     } catch (err) {
-        manejarErrorMssql(res, err);
+        manejarErrorPg(res, err);
     }
 };
 
@@ -161,16 +160,17 @@ exports.cambiarPassword = async (req, res) => {
     if (pwError) return res.status(400).json({ message: pwError });
     try {
         const pool = await getPool();
-        const { recordset } = await pool.request().input('id', sql.Int, req.user.id)
-            .query('SELECT password_hash FROM dbo.Usuarios WHERE id = @id AND activo = 1');
-        if (!recordset[0] || !(await bcrypt.compare(actual, recordset[0].password_hash))) {
+        const { rows } = await pool.query(
+            'SELECT password_hash FROM usuarios WHERE id = $1 AND activo = TRUE',
+            [req.user.id]
+        );
+        if (!rows[0] || !(await bcrypt.compare(actual, rows[0].password_hash))) {
             return res.status(400).json({ message: 'La contraseña actual no es correcta' });
         }
         const hash = await bcrypt.hash(nueva, 10);
-        await pool.request().input('id', sql.Int, req.user.id).input('hash', sql.VarChar(100), hash)
-            .query('UPDATE dbo.Usuarios SET password_hash = @hash WHERE id = @id');
+        await pool.query('UPDATE usuarios SET password_hash = $1 WHERE id = $2', [hash, req.user.id]);
         return res.json({ message: 'Contraseña actualizada correctamente' });
-    } catch (err) { return manejarErrorMssql(res, err); }
+    } catch (err) { return manejarErrorPg(res, err); }
 };
 
 exports.solicitarRecuperacion = async (req, res) => {
@@ -178,31 +178,26 @@ exports.solicitarRecuperacion = async (req, res) => {
     if (!/^\d{7,8}$/.test(dni)) return res.status(400).json({ message: 'Ingresá un DNI válido de 7 u 8 dígitos' });
     try {
         const pool = await getPool();
-        await pool.request().query(`IF OBJECT_ID('dbo.PasswordResetTokens', 'U') IS NULL
-            CREATE TABLE dbo.PasswordResetTokens (
-              id INT IDENTITY(1,1) PRIMARY KEY,
-              usuario_id INT NOT NULL,
-              token_hash CHAR(64) NOT NULL,
-              vence DATETIME2(0) NOT NULL,
-              usado BIT NOT NULL CONSTRAINT DF_PasswordResetTokens_usado DEFAULT (0),
-              CONSTRAINT FK_PasswordResetTokens_Usuarios FOREIGN KEY (usuario_id) REFERENCES dbo.Usuarios(id)
-            );`);
-        const { recordset } = await pool.request().input('dni', sql.VarChar(20), dni).query(`
-            SELECT TOP 1 u.id, u.nombre, u.email FROM dbo.Alumnos a
-            INNER JOIN dbo.Usuarios u ON u.id = a.padre_id
-            WHERE a.dni = @dni AND u.rol = 'padre' AND u.activo = 1 AND u.email IS NOT NULL`);
-        if (recordset[0]) {
+        const { rows } = await pool.query(
+            `SELECT u.id, u.nombre, u.email FROM alumnos a
+             INNER JOIN usuarios u ON u.id = a.padre_id
+             WHERE a.dni = $1 AND u.rol = 'padre' AND u.activo = TRUE AND u.email IS NOT NULL
+             LIMIT 1`,
+            [dni]
+        );
+        if (rows[0]) {
             const token = crypto.randomBytes(24).toString('hex');
-            const user = recordset[0];
-            await pool.request().input('usuarioId', sql.Int, user.id).query('DELETE FROM dbo.PasswordResetTokens WHERE usuario_id = @usuarioId');
-            await pool.request().input('usuarioId', sql.Int, user.id)
-                .input('tokenHash', sql.Char(64), hashTokenRecuperacion(token))
-                .query(`INSERT INTO dbo.PasswordResetTokens (usuario_id, token_hash, vence)
-                        VALUES (@usuarioId, @tokenHash, DATEADD(MINUTE, 15, SYSUTCDATETIME()))`);
+            const user = rows[0];
+            await pool.query('DELETE FROM password_reset_tokens WHERE usuario_id = $1', [user.id]);
+            await pool.query(
+                `INSERT INTO password_reset_tokens (usuario_id, token_hash, vence)
+                 VALUES ($1, $2, now() + INTERVAL '15 minutes')`,
+                [user.id, hashTokenRecuperacion(token)]
+            );
             await enviarRecuperacionPassword(user.email, user.nombre, token);
         }
         return res.json({ message: 'Si encontramos una cuenta asociada, enviaremos un código al correo registrado.' });
-    } catch (err) { return manejarErrorMssql(res, err); }
+    } catch (err) { return manejarErrorPg(res, err); }
 };
 
 exports.restablecerPassword = async (req, res) => {
@@ -213,33 +208,46 @@ exports.restablecerPassword = async (req, res) => {
     if (pwError) return res.status(400).json({ message: pwError });
     try {
         const pool = await getPool();
-        await pool.request().query(`IF OBJECT_ID('dbo.PasswordResetTokens', 'U') IS NULL
-            THROW 50001, 'No hay solicitudes de recuperación vigentes', 1;`);
-        const { recordset } = await pool.request().input('tokenHash', sql.Char(64), hashTokenRecuperacion(token))
-            .query(`SELECT TOP 1 usuario_id FROM dbo.PasswordResetTokens
-                    WHERE token_hash = @tokenHash AND usado = 0 AND vence > SYSUTCDATETIME()`);
-        if (!recordset[0]) return res.status(400).json({ message: 'El código venció o ya fue utilizado. Solicitá uno nuevo.' });
+        const { rows } = await pool.query(
+            `SELECT usuario_id FROM password_reset_tokens
+             WHERE token_hash = $1 AND usado = FALSE AND vence > now()
+             LIMIT 1`,
+            [hashTokenRecuperacion(token)]
+        );
+        if (!rows[0]) return res.status(400).json({ message: 'El código venció o ya fue utilizado. Solicitá uno nuevo.' });
         const hash = await bcrypt.hash(nueva, 10);
-        await pool.request().input('usuarioId', sql.Int, recordset[0].usuario_id).input('hash', sql.VarChar(100), hash)
-            .input('tokenHash', sql.Char(64), hashTokenRecuperacion(token)).query(`
-                BEGIN TRANSACTION;
-                UPDATE dbo.Usuarios SET password_hash = @hash WHERE id = @usuarioId;
-                UPDATE dbo.PasswordResetTokens SET usado = 1 WHERE token_hash = @tokenHash AND usado = 0;
-                COMMIT TRANSACTION;`);
+
+        const client = await pool.connect();
+        try {
+            await client.query('BEGIN');
+            await client.query('UPDATE usuarios SET password_hash = $1 WHERE id = $2', [hash, rows[0].usuario_id]);
+            await client.query(
+                "UPDATE password_reset_tokens SET usado = TRUE WHERE token_hash = $1 AND usado = FALSE",
+                [hashTokenRecuperacion(token)]
+            );
+            await client.query('COMMIT');
+        } catch (err) {
+            await client.query('ROLLBACK');
+            throw err;
+        } finally {
+            client.release();
+        }
+
         return res.json({ message: 'Contraseña actualizada. Ya podés iniciar sesión.' });
-    } catch (err) { return manejarErrorMssql(res, err); }
+    } catch (err) { return manejarErrorPg(res, err); }
 };
 
 exports.getPadres = async (req, res) => {
     try {
         const pool = await getPool();
-        const { recordset } = await pool.request()
-            .query(`SELECT id, ${NOMBRE_COMPLETO} AS nombre, username
-                    FROM Usuarios WHERE rol = 'padre' AND activo = 1
-                    ORDER BY apellido, nombre`);
-        res.json(recordset);
+        const { rows } = await pool.query(
+            `SELECT id, ${NOMBRE_COMPLETO} AS nombre, username
+             FROM usuarios WHERE rol = 'padre' AND activo = TRUE
+             ORDER BY apellido, nombre`
+        );
+        res.json(rows);
     } catch (err) {
-        manejarErrorMssql(res, err);
+        manejarErrorPg(res, err);
     }
 };
 
@@ -247,12 +255,13 @@ exports.getPadres = async (req, res) => {
 exports.getUsers = async (req, res) => {
     try {
         const pool = await getPool();
-        const { recordset } = await pool.request()
-            .query(`SELECT id, username, ${NOMBRE_COMPLETO} AS nombre, rol, fecha_creacion AS created_at
-                    FROM Usuarios ORDER BY rol, apellido, nombre`);
-        res.json(recordset);
+        const { rows } = await pool.query(
+            `SELECT id, username, ${NOMBRE_COMPLETO} AS nombre, rol, fecha_creacion AS created_at
+             FROM usuarios ORDER BY rol, apellido, nombre`
+        );
+        res.json(rows);
     } catch (err) {
-        manejarErrorMssql(res, err);
+        manejarErrorPg(res, err);
     }
 };
 
@@ -290,7 +299,7 @@ exports.createUser = async (req, res) => {
         if (esDuplicado(err)) {
             return res.status(409).json({ message: 'Ya existe un usuario con ese nombre de usuario/correo' });
         }
-        manejarErrorMssql(res, err);
+        manejarErrorPg(res, err);
     }
 };
 
@@ -310,18 +319,15 @@ exports.updateUserRol = async (req, res) => {
     }
     try {
         const pool = await getPool();
-        const { rowsAffected } = await pool.request()
-            .input('id', sql.Int, id)
-            .input('rol', sql.VarChar(20), rol)
-            .query('UPDATE Usuarios SET rol = @rol WHERE id = @id');
-        if (rowsAffected[0] === 0) return res.status(404).json({ message: 'Usuario no encontrado' });
+        const { rowCount } = await pool.query('UPDATE usuarios SET rol = $1 WHERE id = $2', [rol, id]);
+        if (rowCount === 0) return res.status(404).json({ message: 'Usuario no encontrado' });
         res.json({ message: 'Rol actualizado correctamente' });
     } catch (err) {
         // Las FK (usuario_id, rol) impiden, p. ej., que un padre con hijos deje de ser padre.
-        if (err.number === 547) {
+        if (err.code === '23503') {
             return res.status(409).json({ message: 'No se puede cambiar el rol: el usuario tiene legajos asociados (hijos, legajo docente o de alumno)' });
         }
-        manejarErrorMssql(res, err);
+        manejarErrorPg(res, err);
     }
 };
 
@@ -335,15 +341,13 @@ exports.deleteUser = async (req, res) => {
     }
     try {
         const pool = await getPool();
-        const { rowsAffected } = await pool.request()
-            .input('id', sql.Int, id)
-            .query('DELETE FROM Usuarios WHERE id = @id');
-        if (rowsAffected[0] === 0) return res.status(404).json({ message: 'Usuario no encontrado' });
+        const { rowCount } = await pool.query('DELETE FROM usuarios WHERE id = $1', [id]);
+        if (rowCount === 0) return res.status(404).json({ message: 'Usuario no encontrado' });
         res.json({ message: 'Usuario eliminado correctamente' });
     } catch (err) {
-        if (err.number === 547) {
+        if (err.code === '23503') {
             return res.status(409).json({ message: 'No se puede eliminar: el usuario tiene legajos asociados (hijos, legajo docente o de alumno)' });
         }
-        manejarErrorMssql(res, err);
+        manejarErrorPg(res, err);
     }
 };

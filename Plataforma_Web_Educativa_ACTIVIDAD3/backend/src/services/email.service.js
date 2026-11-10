@@ -1,5 +1,4 @@
 const nodemailer = require('nodemailer');
-const path = require('path');
 
 let transporter;
 
@@ -27,9 +26,9 @@ function validarDestino(emailDestino) {
     }
 }
 
-async function enviarFactura(emailDestino, factura, rutaPDF) {
+async function enviarFactura(emailDestino, factura, pdf) {
     validarDestino(emailDestino);
-    if (!rutaPDF) throw new Error('La factura no tiene una ruta PDF válida');
+    if (!pdf || !pdf.buffer) throw new Error('La factura no tiene un PDF válido para adjuntar');
 
     return obtenerTransporter().sendMail({
         from: `Educar para Transformar <${process.env.EMAIL_USER}>`,
@@ -41,8 +40,8 @@ async function enviarFactura(emailDestino, factura, rutaPDF) {
                <p>Total a pagar: <strong>$${factura.total}</strong></p>
                <p>Saludos cordiales.<br>Educar para Transformar</p>`,
         attachments: [{
-            filename: path.basename(rutaPDF),
-            path: rutaPDF
+            filename: pdf.nombreArchivo,
+            content: pdf.buffer
         }]
     });
 }

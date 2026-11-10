@@ -1,7 +1,8 @@
 const cron = require('node-cron');
-const { sql, getPool } = require('../config/db');
+const { getPool } = require('../config/db');
 const { generarFacturaPDF } = require('../services/facturaPdf.service');
 const { enviarFactura } = require('../services/email.service');
+const { subirArchivo, BUCKET_FACTURAS } = require('../config/supabaseStorage');
 
 const CRON_EXPRESION = '0 2 * * *';
 const ZONA_HORARIA = process.env.TZ || 'America/Argentina/Buenos_Aires';
@@ -30,15 +31,12 @@ async function esHoyUltimoDiaHabil(fecha = new Date()) {
         const fechaCandidata = fechaUTCFormateada(candidato);
 
         if (diaSemana !== 0 && diaSemana !== 6) {
-            const feriado = await pool.request()
-                .input('fecha', sql.Date, fechaCandidata)
-                .query(`
-                    SELECT TOP 1 1 AS existe
-                    FROM dbo.Feriado
-                    WHERE fecha = @fecha;
-                `);
+            const { rows } = await pool.query(
+                'SELECT 1 AS existe FROM feriado WHERE fecha = $1 LIMIT 1',
+                [fechaCandidata]
+            );
 
-            if (!feriado.recordset.length) {
+            if (!rows.length) {
                 return fechaCandidata === hoyTexto;
             }
         }
@@ -59,94 +57,97 @@ function ultimoDiaDelMes(periodo) {
     return `${anio}-${String(mes).padStart(2, '0')}-${new Date(anio, mes, 0).getDate()}`;
 }
 
-async function consultarConceptosAlumno(transaction, alumnoId, periodo) {
-    return transaction.request()
-        .input('alumnoId', sql.Int, alumnoId)
-        .input('periodo', sql.Date, periodo)
-        .query(`
-            SELECT tc.id AS tarifa_concepto_id,
-                   COALESCE(tc.descripcion, tc.tipo_servicio) AS descripcion,
-                   tc.monto AS importe_unitario
-            FROM dbo.TarifaConcepto tc
-            WHERE tc.tipo_servicio = 'cuota'
-              AND tc.vigencia <= @periodo
-              AND (tc.vigencia_hasta IS NULL OR tc.vigencia_hasta >= @periodo)
-              AND tc.activo = 1
-              AND tc.id = (
-                  SELECT TOP 1 cuota.id
-                  FROM dbo.TarifaConcepto cuota
-                  WHERE cuota.tipo_servicio = 'cuota'
-                    AND cuota.vigencia <= @periodo
-                    AND (cuota.vigencia_hasta IS NULL OR cuota.vigencia_hasta >= @periodo)
-                    AND cuota.activo = 1
-                  ORDER BY cuota.vigencia DESC, cuota.id DESC
-              )
+async function consultarConceptosAlumno(client, alumnoId, periodo) {
+    const { rows } = await client.query(
+        `SELECT tc.id AS tarifa_concepto_id,
+                COALESCE(tc.descripcion, tc.tipo_servicio) AS descripcion,
+                tc.monto AS importe_unitario
+         FROM tarifa_concepto tc
+         WHERE tc.tipo_servicio = 'cuota'
+           AND tc.vigencia <= $2
+           AND (tc.vigencia_hasta IS NULL OR tc.vigencia_hasta >= $2)
+           AND tc.activo = TRUE
+           AND tc.id = (
+               SELECT cuota.id
+               FROM tarifa_concepto cuota
+               WHERE cuota.tipo_servicio = 'cuota'
+                 AND cuota.vigencia <= $2
+                 AND (cuota.vigencia_hasta IS NULL OR cuota.vigencia_hasta >= $2)
+                 AND cuota.activo = TRUE
+               ORDER BY cuota.vigencia DESC, cuota.id DESC
+               LIMIT 1
+           )
 
-            UNION ALL
+         UNION ALL
 
-            SELECT tc.id,
-                   COALESCE(tc.descripcion, CONCAT('Deporte: ', d.nombre)),
-                   tc.monto
-            FROM dbo.Inscripciones_Deportes i
-            INNER JOIN dbo.Deportes d ON d.id = i.deporte_id
-            INNER JOIN dbo.TarifaConcepto tc ON tc.tipo_servicio = 'deporte'
-                AND tc.deporte_id = d.id
-                AND tc.vigencia <= @periodo
-                AND (tc.vigencia_hasta IS NULL OR tc.vigencia_hasta >= @periodo)
-                AND tc.activo = 1
-            WHERE i.alumno_id = @alumnoId
-              AND tc.id = (
-                  SELECT TOP 1 deporte.id
-                  FROM dbo.TarifaConcepto deporte
-                  WHERE deporte.tipo_servicio = 'deporte'
-                    AND deporte.deporte_id = d.id
-                    AND deporte.vigencia <= @periodo
-                    AND (deporte.vigencia_hasta IS NULL OR deporte.vigencia_hasta >= @periodo)
-                    AND deporte.activo = 1
-                  ORDER BY deporte.vigencia DESC, deporte.id DESC
-              )
+         SELECT tc.id,
+                COALESCE(tc.descripcion, CONCAT('Deporte: ', d.nombre)),
+                tc.monto
+         FROM inscripciones_deportes i
+         INNER JOIN deportes d ON d.id = i.deporte_id
+         INNER JOIN tarifa_concepto tc ON tc.tipo_servicio = 'deporte'
+             AND tc.deporte_id = d.id
+             AND tc.vigencia <= $2
+             AND (tc.vigencia_hasta IS NULL OR tc.vigencia_hasta >= $2)
+             AND tc.activo = TRUE
+         WHERE i.alumno_id = $1
+           AND tc.id = (
+               SELECT deporte.id
+               FROM tarifa_concepto deporte
+               WHERE deporte.tipo_servicio = 'deporte'
+                 AND deporte.deporte_id = d.id
+                 AND deporte.vigencia <= $2
+                 AND (deporte.vigencia_hasta IS NULL OR deporte.vigencia_hasta >= $2)
+                 AND deporte.activo = TRUE
+               ORDER BY deporte.vigencia DESC, deporte.id DESC
+               LIMIT 1
+           )
 
-            UNION ALL
+         UNION ALL
 
-            SELECT tc.id,
-                   COALESCE(tc.descripcion, CONCAT('Transporte: ', t.nombre)),
-                   tc.monto
-            FROM dbo.Alumnos a
-            INNER JOIN dbo.Transportes t ON t.id = a.transporte_id
-            INNER JOIN dbo.TarifaConcepto tc ON tc.tipo_servicio = 'transporte'
-                AND tc.transporte_id = t.id
-                AND tc.vigencia <= @periodo
-                AND (tc.vigencia_hasta IS NULL OR tc.vigencia_hasta >= @periodo)
-                AND tc.activo = 1
-            WHERE a.id = @alumnoId
-              AND tc.id = (
-                  SELECT TOP 1 transporte.id
-                  FROM dbo.TarifaConcepto transporte
-                  WHERE transporte.tipo_servicio = 'transporte'
-                    AND transporte.transporte_id = t.id
-                    AND transporte.vigencia <= @periodo
-                    AND (transporte.vigencia_hasta IS NULL OR transporte.vigencia_hasta >= @periodo)
-                    AND transporte.activo = 1
-                  ORDER BY transporte.vigencia DESC, transporte.id DESC
-              )
+         SELECT tc.id,
+                COALESCE(tc.descripcion, CONCAT('Transporte: ', t.nombre)),
+                tc.monto
+         FROM alumnos a
+         INNER JOIN transportes t ON t.id = a.transporte_id
+         INNER JOIN tarifa_concepto tc ON tc.tipo_servicio = 'transporte'
+             AND tc.transporte_id = t.id
+             AND tc.vigencia <= $2
+             AND (tc.vigencia_hasta IS NULL OR tc.vigencia_hasta >= $2)
+             AND tc.activo = TRUE
+         WHERE a.id = $1
+           AND tc.id = (
+               SELECT transporte.id
+               FROM tarifa_concepto transporte
+               WHERE transporte.tipo_servicio = 'transporte'
+                 AND transporte.transporte_id = t.id
+                 AND transporte.vigencia <= $2
+                 AND (transporte.vigencia_hasta IS NULL OR transporte.vigencia_hasta >= $2)
+                 AND transporte.activo = TRUE
+               ORDER BY transporte.vigencia DESC, transporte.id DESC
+               LIMIT 1
+           )
 
-            UNION ALL
+         UNION ALL
 
-            SELECT comedor.id, comedor.descripcion, comedor.monto
-            FROM (
-                SELECT TOP (1) tc.id,
-                       COALESCE(tc.descripcion, 'Comedor') AS descripcion,
-                       tc.monto
-                FROM dbo.Alumnos a
-                INNER JOIN dbo.TarifaConcepto tc ON tc.tipo_servicio = 'comedor'
-                    AND tc.vigencia <= @periodo
-                    AND (tc.vigencia_hasta IS NULL OR tc.vigencia_hasta >= @periodo)
-                    AND tc.activo = 1
-                WHERE a.id = @alumnoId
-                  AND a.usa_comedor = 1
-                ORDER BY tc.vigencia DESC, tc.id DESC
-            ) AS comedor;
-        `);
+         SELECT comedor.id, comedor.descripcion, comedor.monto
+         FROM (
+             SELECT tc.id,
+                    COALESCE(tc.descripcion, 'Comedor') AS descripcion,
+                    tc.monto
+             FROM alumnos a
+             INNER JOIN tarifa_concepto tc ON tc.tipo_servicio = 'comedor'
+                 AND tc.vigencia <= $2
+                 AND (tc.vigencia_hasta IS NULL OR tc.vigencia_hasta >= $2)
+                 AND tc.activo = TRUE
+             WHERE a.id = $1
+               AND a.usa_comedor = TRUE
+             ORDER BY tc.vigencia DESC, tc.id DESC
+             LIMIT 1
+         ) AS comedor`,
+        [alumnoId, periodo]
+    );
+    return rows;
 }
 
 async function generarFacturasDelPeriodo(fecha = new Date()) {
@@ -157,75 +158,60 @@ async function generarFacturasDelPeriodo(fecha = new Date()) {
     const periodo = periodoDelMes(fecha);
     const vencimiento = ultimoDiaDelMes(periodo);
     const pool = await getPool();
-    const alumnos = await pool.request().query(`
-        SELECT id
-        FROM dbo.Alumnos
-        ORDER BY id;
-    `);
+    const { rows: alumnos } = await pool.query('SELECT id FROM alumnos ORDER BY id');
 
     let creadas = 0;
     let duplicadas = 0;
 
-    for (const alumno of alumnos.recordset) {
-        const transaction = new sql.Transaction(pool);
+    for (const alumno of alumnos) {
+        const client = await pool.connect();
         let iniciada = false;
 
         try {
-            await transaction.begin(sql.ISOLATION_LEVEL.SERIALIZABLE);
+            await client.query('BEGIN ISOLATION LEVEL SERIALIZABLE');
             iniciada = true;
 
-            const conceptos = await consultarConceptosAlumno(transaction, alumno.id, periodo);
-            if (!conceptos.recordset.length) {
-                await transaction.commit();
+            const conceptos = await consultarConceptosAlumno(client, alumno.id, periodo);
+            if (!conceptos.length) {
+                await client.query('COMMIT');
                 iniciada = false;
                 continue;
             }
 
-            const total = conceptos.recordset.reduce(
+            const total = conceptos.reduce(
                 (suma, concepto) => suma + Number(concepto.importe_unitario),
                 0
             );
 
-            const datosAlumno = await transaction.request()
-                .input('alumnoId', sql.Int, alumno.id)
-                .query(`
-                    SELECT a.id, a.nombre, a.apellido, a.dni, u.email AS padre_email
-                    FROM dbo.Alumnos a
-                    INNER JOIN dbo.Usuarios u ON u.id = a.padre_id
-                    WHERE a.id = @alumnoId;
-                `);
+            const { rows: datosAlumnoRows } = await client.query(
+                `SELECT a.id, a.nombre, a.apellido, a.dni, u.email AS padre_email
+                 FROM alumnos a
+                 INNER JOIN usuarios u ON u.id = a.padre_id
+                 WHERE a.id = $1`,
+                [alumno.id]
+            );
 
-            if (!datosAlumno.recordset.length) {
+            if (!datosAlumnoRows.length) {
                 throw new Error(`No se encontró el alumno ${alumno.id}`);
             }
 
-            const factura = await transaction.request()
-                .input('alumnoId', sql.Int, alumno.id)
-                .input('periodo', sql.Date, periodo)
-                .input('vencimiento', sql.Date, vencimiento)
-                .input('total', sql.Decimal(12, 2), total)
-                .query(`
-                    INSERT INTO dbo.Factura
-                        (alumno_id, periodo, fecha_vencimiento, estado, total, saldo)
-                    OUTPUT INSERTED.id
-                    VALUES (@alumnoId, @periodo, @vencimiento, 'Pendiente', @total, @total);
-                `);
+            const { rows: facturaRows } = await client.query(
+                `INSERT INTO factura (alumno_id, periodo, fecha_vencimiento, estado, total, saldo)
+                 VALUES ($1, $2, $3, 'Pendiente', $4, $4)
+                 RETURNING id`,
+                [alumno.id, periodo, vencimiento, total]
+            );
 
-            const facturaId = factura.recordset[0].id;
-            for (const concepto of conceptos.recordset) {
-                await transaction.request()
-                    .input('facturaId', sql.Int, facturaId)
-                    .input('tarifaConceptoId', sql.Int, concepto.tarifa_concepto_id)
-                    .input('descripcion', sql.NVarChar(200), concepto.descripcion)
-                    .input('importe', sql.Decimal(12, 2), concepto.importe_unitario)
-                    .query(`
-                        INSERT INTO dbo.FacturaDetalle
-                            (factura_id, tarifa_concepto_id, descripcion, cantidad, importe_unitario)
-                        VALUES (@facturaId, @tarifaConceptoId, @descripcion, 1, @importe);
-                    `);
+            const facturaId = facturaRows[0].id;
+            for (const concepto of conceptos) {
+                await client.query(
+                    `INSERT INTO factura_detalle (factura_id, tarifa_concepto_id, descripcion, cantidad, importe_unitario)
+                     VALUES ($1, $2, $3, 1, $4)`,
+                    [facturaId, concepto.tarifa_concepto_id, concepto.descripcion, concepto.importe_unitario]
+                );
             }
 
-            await transaction.commit();
+            await client.query('COMMIT');
             iniciada = false;
             creadas += 1;
 
@@ -237,28 +223,27 @@ async function generarFacturasDelPeriodo(fecha = new Date()) {
                 total
             };
             try {
-                const rutaPDF = await generarFacturaPDF(
-                    facturaParaPdf,
-                    conceptos.recordset,
-                    datosAlumno.recordset[0]
-                );
-                const emailPadre = datosAlumno.recordset[0].padre_email;
+                const pdf = await generarFacturaPDF(facturaParaPdf, conceptos, datosAlumnoRows[0]);
+                await subirArchivo(BUCKET_FACTURAS, pdf.nombreArchivo, pdf.buffer, 'application/pdf');
+                const emailPadre = datosAlumnoRows[0].padre_email;
                 if (emailPadre && process.env.EMAIL_USER && process.env.EMAIL_PASS) {
-                    await enviarFactura(emailPadre, facturaParaPdf, rutaPDF);
+                    await enviarFactura(emailPadre, facturaParaPdf, pdf);
                 }
             } catch (pdfError) {
                 // La factura ya fue confirmada; un fallo de PDF o correo no la duplica.
                 console.error(`[facturacion] Error al generar PDF o enviar factura ${facturaId}:`, pdfError.message);
             }
         } catch (error) {
-            if (iniciada) await transaction.rollback().catch(() => undefined);
+            if (iniciada) await client.query('ROLLBACK').catch(() => undefined);
 
-            if (error.number === 2601 || error.number === 2627) {
+            if (error.code === '23505') {
                 duplicadas += 1;
                 continue;
             }
 
             throw error;
+        } finally {
+            client.release();
         }
     }
 

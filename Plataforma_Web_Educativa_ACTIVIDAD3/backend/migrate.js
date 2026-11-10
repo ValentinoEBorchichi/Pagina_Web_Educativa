@@ -1,15 +1,4 @@
-const db = require('./src/config/database');
-
-db.serialize(() => {
-    db.run("ALTER TABLE preinscripciones ADD COLUMN alumno_dni TEXT", (err) => {
-        if (err) {
-            if (err.message.includes("duplicate column name")) {
-                console.log("Column alumno_dni already exists.");
-            } else {
-                console.error("Error adding column:", err.message);
-            }
-        } else {
-            console.log("Column alumno_dni added successfully.");
-        }
-    });
-});
+// Obsoleto: parcheaba la base SQLite (ALTER TABLE preinscripciones ...).
+// El esquema unificado de Postgres ya incluye esa columna desde el inicio:
+// ver backend/supabase/schema.sql (correrlo en el SQL Editor de Supabase).
+console.log('migrate.js ya no hace nada: el esquema vive en backend/supabase/schema.sql');

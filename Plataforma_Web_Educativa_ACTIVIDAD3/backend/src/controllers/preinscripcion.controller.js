@@ -1,17 +1,17 @@
-const db = require('../config/database');
+const { getPool } = require('../config/db');
 const { NOMBRE_REGEX } = require('../utils/validators');
 
-exports.create = (req, res) => {
-    const { 
-        alumno_nombre, 
+exports.create = async (req, res) => {
+    const {
+        alumno_nombre,
         alumno_dni,
-        alumno_edad, 
-        nivel, 
-        turno, 
-        tutor_nombre, 
-        tutor_telefono, 
-        tutor_email, 
-        observaciones 
+        alumno_edad,
+        nivel,
+        turno,
+        tutor_nombre,
+        tutor_telefono,
+        tutor_email,
+        observaciones
     } = req.body;
 
     if (!alumno_nombre || !alumno_dni || !alumno_edad || !nivel || !turno || !tutor_nombre || !tutor_telefono || !tutor_email) {
@@ -35,37 +35,39 @@ exports.create = (req, res) => {
         return res.status(400).json({ message: 'El correo electrónico no tiene un formato válido' });
     }
 
-    const query = `INSERT INTO preinscripciones 
-        (alumno_nombre, alumno_dni, alumno_edad, nivel, turno, tutor_nombre, tutor_telefono, tutor_email, observaciones) 
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`;
-    
-    db.run(query, [alumno_nombre, alumno_dni, alumno_edad, nivel, turno, tutor_nombre, tutor_telefono, tutor_email, observaciones], function(err) {
-        if (err) {
-            return res.status(500).json({ message: 'Error al registrar la preinscripción', error: err.message });
-        }
-        res.status(201).json({ message: 'Preinscripción enviada con éxito', id: this.lastID });
-    });
+    try {
+        const pool = await getPool();
+        const { rows } = await pool.query(
+            `INSERT INTO preinscripciones
+                (alumno_nombre, alumno_dni, alumno_edad, nivel, turno, tutor_nombre, tutor_telefono, tutor_email, observaciones)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+            [alumno_nombre, alumno_dni, alumno_edad, nivel, turno, tutor_nombre, tutor_telefono, tutor_email, observaciones]
+        );
+        res.status(201).json({ message: 'Preinscripción enviada con éxito', id: rows[0].id });
+    } catch (err) {
+        res.status(500).json({ message: 'Error al registrar la preinscripción', error: err.message });
+    }
 };
 
-exports.getAll = (req, res) => {
-    const query = `SELECT * FROM preinscripciones ORDER BY fecha DESC`;
-    db.all(query, [], (err, rows) => {
-        if (err) {
-            return res.status(500).json({ message: 'Error al obtener las preinscripciones', error: err.message });
-        }
+exports.getAll = async (req, res) => {
+    try {
+        const pool = await getPool();
+        const { rows } = await pool.query('SELECT * FROM preinscripciones ORDER BY fecha DESC');
         res.json(rows);
-    });
+    } catch (err) {
+        res.status(500).json({ message: 'Error al obtener las preinscripciones', error: err.message });
+    }
 };
 
-exports.updateStatus = (req, res) => {
+exports.updateStatus = async (req, res) => {
     const { id } = req.params;
     const { estado } = req.body;
 
-    const query = `UPDATE preinscripciones SET estado = ? WHERE id = ?`;
-    db.run(query, [estado, id], function(err) {
-        if (err) {
-            return res.status(500).json({ message: 'Error al actualizar el estado' });
-        }
+    try {
+        const pool = await getPool();
+        await pool.query('UPDATE preinscripciones SET estado = $1 WHERE id = $2', [estado, id]);
         res.json({ message: 'Estado actualizado correctamente' });
-    });
+    } catch (err) {
+        res.status(500).json({ message: 'Error al actualizar el estado' });
+    }
 };
