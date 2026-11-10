@@ -1,10 +1,4 @@
 const PDFDocument = require('pdfkit');
-const fs = require('fs');
-const fsp = require('fs/promises');
-const path = require('path');
-
-const FACTURAS_DIR = path.resolve(__dirname, '../../uploads/facturas');
-const FACTURAS_PREFIX = `${FACTURAS_DIR}${path.sep}`;
 
 function validarFacturaId(valor) {
     const id = Number(valor);
@@ -21,21 +15,17 @@ function moneda(valor) {
     }).format(Number(valor || 0));
 }
 
+// Genera el PDF en memoria (reemplaza el guardado en backend/uploads/facturas,
+// efímero en Render): devuelve el buffer y el nombre de archivo sugerido.
+// El llamador decide qué hacer con el buffer (adjuntarlo a un mail, subirlo a
+// Supabase Storage, o ambos).
 function generarFacturaPDF(factura, detalles, alumno) {
     const facturaId = validarFacturaId(factura.id);
     const nombreArchivo = `factura_${facturaId}.pdf`;
-    const destino = path.normalize(path.resolve(FACTURAS_DIR, nombreArchivo));
-    const rutaRelativa = path.relative(FACTURAS_DIR, destino);
 
-    if (!destino.startsWith(FACTURAS_PREFIX)
-        || rutaRelativa.startsWith('..')
-        || path.isAbsolute(rutaRelativa)) {
-        return Promise.reject(new Error('Ruta de factura no permitida'));
-    }
-
-    return fsp.mkdir(FACTURAS_DIR, { recursive: true }).then(() => new Promise((resolve, reject) => {
+    return new Promise((resolve, reject) => {
         const documento = new PDFDocument({ size: 'A4', margin: 50 });
-        const salida = fs.createWriteStream(destino, { flags: 'wx' });
+        const trozos = [];
         let finalizado = false;
 
         const rechazar = (error) => {
@@ -44,17 +34,15 @@ function generarFacturaPDF(factura, detalles, alumno) {
             reject(error);
         };
 
-        salida.once('error', rechazar);
         documento.once('error', rechazar);
-        salida.once('finish', () => {
+        documento.on('data', (trozo) => trozos.push(trozo));
+        documento.once('end', () => {
             if (finalizado) return;
             finalizado = true;
-            resolve(destino);
+            resolve({ buffer: Buffer.concat(trozos), nombreArchivo });
         });
 
         try {
-            documento.pipe(salida);
-
             documento.fillColor('#1e3a8a').fontSize(22).font('Helvetica-Bold')
                 .text('Educar para Transformar', { align: 'center' });
             documento.fillColor('#475569').fontSize(10).font('Helvetica')
@@ -110,10 +98,9 @@ function generarFacturaPDF(factura, detalles, alumno) {
 
             documento.end();
         } catch (error) {
-            salida.destroy();
             rechazar(error);
         }
-    }));
+    });
 }
 
 module.exports = { generarFacturaPDF };

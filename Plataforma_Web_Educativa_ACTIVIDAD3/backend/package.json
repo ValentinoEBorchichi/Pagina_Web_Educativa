@@ -13,18 +13,18 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@supabase/supabase-js": "^2.45.4",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "jsonwebtoken": "^9.0.2",
     "morgan": "^1.10.0",
-    "mssql": "^12.7.2",
     "multer": "^2.5.0",
     "node-cron": "^4.2.1",
     "nodemailer": "^10.1.4",
     "pdfkit": "^0.19.1",
-    "sqlite3": "^5.1.7"
+    "pg": "^8.13.0"
   },
   "devDependencies": {
     "eslint": "^8.57.0",

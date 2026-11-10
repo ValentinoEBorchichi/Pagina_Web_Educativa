@@ -1,35 +1,48 @@
-const db = require('../config/database');
+const { getPool } = require('../config/db');
 const { manejarErrorSQL } = require('../utils/dbErrors');
 
 // --- NOTIFICACIONES ---
-exports.getNotificaciones = (req, res) => {
+exports.getNotificaciones = async (req, res) => {
     const { rol } = req.user;
-    db.all("SELECT * FROM notificaciones WHERE rol_destino = ? OR rol_destino = 'all' ORDER BY fecha_envio DESC", [rol], (err, rows) => {
-        if (err) return manejarErrorSQL(res, err);
+    try {
+        const pool = await getPool();
+        const { rows } = await pool.query(
+            "SELECT * FROM notificaciones WHERE rol_destino = $1 OR rol_destino = 'all' ORDER BY fecha_envio DESC",
+            [rol]
+        );
         res.json(rows);
-    });
+    } catch (err) { manejarErrorSQL(res, err); }
 };
 
-exports.crearNotificacion = (req, res) => {
+exports.crearNotificacion = async (req, res) => {
     const { titulo, mensaje, rol_destino } = req.body;
-    db.run("INSERT INTO notificaciones (titulo, mensaje, rol_destino) VALUES (?, ?, ?)", [titulo, mensaje, rol_destino], function(err) {
-        if (err) return manejarErrorSQL(res, err);
-        res.status(201).json({ id: this.lastID });
-    });
+    try {
+        const pool = await getPool();
+        const { rows } = await pool.query(
+            "INSERT INTO notificaciones (titulo, mensaje, rol_destino) VALUES ($1, $2, $3) RETURNING id",
+            [titulo, mensaje, rol_destino]
+        );
+        res.status(201).json({ id: rows[0].id });
+    } catch (err) { manejarErrorSQL(res, err); }
 };
 
 // --- ACTIVIDADES EXTRA ---
-exports.getActividadesExtra = (req, res) => {
-    db.all("SELECT * FROM actividades_extra", [], (err, rows) => {
-        if (err) return manejarErrorSQL(res, err);
+exports.getActividadesExtra = async (req, res) => {
+    try {
+        const pool = await getPool();
+        const { rows } = await pool.query("SELECT * FROM actividades_extra");
         res.json(rows);
-    });
+    } catch (err) { manejarErrorSQL(res, err); }
 };
 
-exports.inscribirActividad = (req, res) => {
+exports.inscribirActividad = async (req, res) => {
     const { alumno_id, actividad_id } = req.body;
-    db.run("INSERT INTO inscripciones_extra (alumno_id, actividad_id) VALUES (?, ?)", [alumno_id, actividad_id], function(err) {
-        if (err) return manejarErrorSQL(res, err);
-        res.status(201).json({ id: this.lastID });
-    });
+    try {
+        const pool = await getPool();
+        const { rows } = await pool.query(
+            "INSERT INTO inscripciones_extra (alumno_id, actividad_id) VALUES ($1, $2) RETURNING id",
+            [alumno_id, actividad_id]
+        );
+        res.status(201).json({ id: rows[0].id });
+    } catch (err) { manejarErrorSQL(res, err); }
 };

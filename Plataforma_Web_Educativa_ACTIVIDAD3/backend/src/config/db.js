@@ -1,71 +1,50 @@
-const sql = require('mssql');
+const { Pool } = require('pg');
 require('dotenv').config();
 
-// Conexión a Microsoft SQL Server (driver "mssql").
-// Se usa un único pool compartido por toda la app: se crea en el primer
-// getPool() y se reutiliza en cada consulta (no abrir/cerrar por request).
+// Conexión a PostgreSQL (Supabase) con el driver "pg". Pool único compartido
+// por toda la app (se abre en el primer getPool() y se reutiliza).
 //
 // Uso en un controlador (siempre con parámetros, nunca concatenando strings):
-//   const { sql, getPool } = require('../config/db');
+//   const { getPool } = require('../config/db');
 //   const pool = await getPool();
-//   const { recordset } = await pool.request()
-//       .input('id', sql.Int, req.params.id)
-//       .query('SELECT * FROM Alumnos WHERE id = @id');
+//   const { rows } = await pool.query('SELECT * FROM alumnos WHERE id = $1', [req.params.id]);
+//
+// Para transacciones (reemplaza a sql.Transaction / BEGIN-COMMIT de texto):
+//   const client = await pool.connect();
+//   try {
+//       await client.query('BEGIN');
+//       ...
+//       await client.query('COMMIT');
+//   } catch (err) {
+//       await client.query('ROLLBACK');
+//       throw err;
+//   } finally {
+//       client.release();
+//   }
 
-const config = {
-    server: process.env.DB_SERVER || 'localhost',
-    database: process.env.DB_NAME || 'EducarParaTransformar',
-    user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
-    pool: {
-        max: 10,
-        min: 0,
-        idleTimeoutMillis: 30000
-    },
-    options: {
-        // SQL Server local (certificado autofirmado): DB_TRUST_SERVER_CERTIFICATE=true.
-        // Producción / Azure: dejarlo en false para validar el certificado.
-        encrypt: process.env.DB_ENCRYPT !== 'false',
-        trustServerCertificate: process.env.DB_TRUST_SERVER_CERTIFICATE === 'true'
-    }
-};
-
-// Instancia con nombre (p. ej. SQLEXPRESS) o puerto fijo: son excluyentes.
-if (process.env.DB_INSTANCE) {
-    config.options.instanceName = process.env.DB_INSTANCE;
-} else {
-    config.port = parseInt(process.env.DB_PORT, 10) || 1433;
+if (!process.env.DATABASE_URL) {
+    throw new Error('Falta DATABASE_URL en backend/.env (connection string de Supabase/Postgres)');
 }
 
-let poolPromise = null;
+// Supabase exige TLS con un certificado de una CA pública válida: se valida
+// siempre (ssl: true -> rejectUnauthorized: true, el default de Node). No
+// hay ningún flag para desactivarla: si algún entorno rarísimo lo necesitara,
+// se parchea a mano ahí, nunca como opción disponible en el repo.
+const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: true,
+    max: 10,
+    idleTimeoutMillis: 30000
+});
 
-function getPool() {
-    if (!poolPromise) {
-        if (!config.user || !config.password) {
-            return Promise.reject(new Error('Faltan DB_USER y/o DB_PASSWORD en backend/.env'));
-        }
-        poolPromise = new sql.ConnectionPool(config)
-            .connect()
-            .then((pool) => {
-                console.log(`Conectado a SQL Server (${config.server} / ${config.database}).`);
-                pool.on('error', (err) => console.error('Error en el pool de SQL Server:', err.message));
-                return pool;
-            })
-            .catch((err) => {
-                // Permite reintentar la conexión en la próxima llamada.
-                poolPromise = null;
-                throw err;
-            });
-    }
-    return poolPromise;
+pool.on('error', (err) => console.error('Error en el pool de Postgres:', err.message));
+
+async function getPool() {
+    return pool;
 }
 
-// Cierre ordenado (scripts, tests o apagado del servidor).
 async function closePool() {
-    if (!poolPromise) return;
-    const pool = await poolPromise.catch(() => null);
-    poolPromise = null;
-    if (pool) await pool.close();
+    await pool.end();
 }
 
-module.exports = { sql, getPool, closePool };
+module.exports = { getPool, closePool, pool };

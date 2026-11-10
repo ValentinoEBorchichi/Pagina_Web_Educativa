@@ -12,7 +12,8 @@ const PadreDashboard = () => {
     const [saldoTotal, setSaldoTotal] = useState(0);
     const [disponibles, setDisponibles] = useState([]);
     const [alumnoSel, setAlumnoSel] = useState('');
-    const [pagos, setPagos] = useState([]);
+    const [facturas, setFacturas] = useState([]);
+    const [comprobantes, setComprobantes] = useState([]);
     const [deportes, setDeportes] = useState([]);
     const [deporteSel, setDeporteSel] = useState({});   // { [hijoId]: deporteId }
     const [msgDeporte, setMsgDeporte] = useState(null); // { tipo: 'error' | 'ok', texto }
@@ -22,38 +23,40 @@ const PadreDashboard = () => {
         fetchNotificaciones();
         fetchHijosYSaldos();
         fetchDisponibles();
-        fetchPagos();
+        fetchFacturas();
+        fetchComprobantes();
     }, []);
 
-    const fetchPagos = async () => {
+    // Facturas y comprobantes de los propios hijos: el backend ya los filtra
+    // por el padre autenticado (RNFM-02: una sola fuente de verdad, sin "pagos" sueltos).
+    const fetchFacturas = async () => {
         try {
-            const response = await apiFetch(`${API_URL}/api/financiero/pagos`);
-            if (response.ok) setPagos(await response.json());
+            const response = await apiFetch(`${API_URL}/api/financiero/facturas`);
+            if (response.ok) setFacturas(await response.json());
         } catch (error) {
             console.error(error);
         }
     };
 
-    // Descarga el comprobante de pago en PDF (solo lectura, de los hijos vinculados).
-    const descargarComprobante = async (pagoId) => {
+    const fetchComprobantes = async () => {
         try {
-            const response = await apiFetch(`${API_URL}/api/financiero/comprobante/${pagoId}`);
-            if (!response.ok) {
-                const errorBody = await response.json().catch(() => ({}));
-                return alert(errorBody.message || 'No se pudo generar el comprobante');
-            }
-            const blob = await response.blob();
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.href = url;
-            link.setAttribute('download', `comprobante_pago_${pagoId}.pdf`);
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            URL.revokeObjectURL(url);
+            const response = await apiFetch(`${API_URL}/api/financiero/comprobantes`);
+            if (response.ok) setComprobantes(await response.json());
         } catch (error) {
             console.error(error);
-            alert('Error al descargar el comprobante');
+        }
+    };
+
+    // Abre el archivo del comprobante subido (imagen o PDF) en una pestaña nueva.
+    const verComprobante = async (comprobanteId) => {
+        try {
+            const response = await apiFetch(`${API_URL}/api/financiero/comprobantes/${comprobanteId}/archivo`);
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) return alert(data.message || 'No se pudo abrir el comprobante');
+            window.open(data.url, '_blank');
+        } catch (error) {
+            console.error(error);
+            alert('Error al abrir el comprobante');
         }
     };
 
@@ -511,19 +514,42 @@ const PadreDashboard = () => {
                         >📥 Imprimir / Guardar como PDF</button>
 
                         <div style={{ marginTop: '24px' }}>
-                            <span style={labelStyle}>Comprobantes de Pago</span>
-                            {pagos.length === 0 ? (
+                            <span style={labelStyle}>Facturas</span>
+                            {facturas.length === 0 ? (
                                 <p style={{ fontSize: '0.8rem', color: '#64748b', padding: '8px 0' }}>
-                                    Todavía no hay pagos registrados.
+                                    Todavía no hay facturas emitidas.
                                 </p>
                             ) : (
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }}>
-                                    {pagos.map(p => (
-                                        <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.82rem', padding: '8px 0', borderBottom: '1px solid #f1f5f9' }}>
+                                    {facturas.map(f => (
+                                        <div key={f.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.82rem', padding: '8px 0', borderBottom: '1px solid #f1f5f9' }}>
                                             <span>
-                                                {p.fecha_pago ? new Date(p.fecha_pago).toLocaleDateString('es-AR') : '-'} · {p.alumno_apellido}, {p.alumno_nombre} · <strong>${Number(p.monto_pagado).toFixed(2)}</strong>
+                                                {f.periodo} · {f.alumno_apellido}, {f.alumno_nombre} · {f.estado} · <strong>${Number(f.saldo).toFixed(2)}</strong> / ${Number(f.total).toFixed(2)}
                                             </span>
-                                            <button onClick={() => descargarComprobante(p.id)} style={{ background: 'none', border: 'none', color: 'var(--blue)', fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>📄 PDF</button>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
+                        <div style={{ marginTop: '24px' }}>
+                            <span style={labelStyle}>Comprobantes subidos</span>
+                            {comprobantes.length === 0 ? (
+                                <p style={{ fontSize: '0.8rem', color: '#64748b', padding: '8px 0' }}>
+                                    Todavía no subiste ningún comprobante de transferencia.
+                                </p>
+                            ) : (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }}>
+                                    {comprobantes.map(c => (
+                                        <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.82rem', padding: '8px 0', borderBottom: '1px solid #f1f5f9' }}>
+                                            <span>
+                                                {new Date(c.fecha_carga).toLocaleDateString('es-AR')} · {c.alumno_apellido}, {c.alumno_nombre} · <strong>${Number(c.monto).toFixed(2)}</strong> ·{' '}
+                                                <span style={{
+                                                    fontWeight: 700,
+                                                    color: c.estado_verificacion === 'Aprobado' ? 'var(--green)' : c.estado_verificacion === 'Rechazado' ? '#dc2626' : 'var(--orange)'
+                                                }}>{c.estado_verificacion}</span>
+                                            </span>
+                                            <button onClick={() => verComprobante(c.id)} style={{ background: 'none', border: 'none', color: 'var(--blue)', fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>📄 Ver</button>
                                         </div>
                                     ))}
                                 </div>

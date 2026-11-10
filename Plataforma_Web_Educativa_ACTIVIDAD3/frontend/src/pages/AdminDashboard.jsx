@@ -26,7 +26,15 @@ const AdminDashboard = () => {
     const [niveles, setNiveles] = useState([]);
 
     const [rutasTransporte, setRutasTransporte] = useState([]);
-    const [cuotasConfig, setCuotasConfig] = useState([]);
+    const [tarifas, setTarifas] = useState([]);
+    const [deportesTarifa, setDeportesTarifa] = useState([]);
+    const [transportesTarifa, setTransportesTarifa] = useState([]);
+    const [facturas, setFacturas] = useState([]);
+    const [soloDeuda, setSoloDeuda] = useState(false);
+    const [facturaAbierta, setFacturaAbierta] = useState(null);
+    const [detalleFactura, setDetalleFactura] = useState([]);
+    const [comprobantes, setComprobantes] = useState([]);
+    const [comprobanteEstado, setComprobanteEstado] = useState('Pendiente');
     const [reportesStats, setReportesStats] = useState(null);
     const [reportesFinancieros, setReportesFinancieros] = useState(null);
     const [reporteAcademico, setReporteAcademico] = useState([]);
@@ -38,7 +46,6 @@ const AdminDashboard = () => {
     const [docentes, setDocentes] = useState([]);
     const [academicoSub, setAcademicoSub] = useState('cursos');
     const [usuarios, setUsuarios] = useState([]);
-    const [pagos, setPagos] = useState([]);
 
     useEffect(() => {
         if (activeTab === 'preinscripciones') fetchPreinscripciones();
@@ -48,11 +55,22 @@ const AdminDashboard = () => {
             fetchActividades(); fetchHorarios(); fetchDocentes();
         }
         if (activeTab === 'personal') fetchPersonal();
-        if (activeTab === 'finanzas') { fetchFinanzas(); fetchNiveles(); fetchAlumnos(); fetchPagos(); }
+        if (activeTab === 'finanzas') {
+            fetchTarifas(); fetchDeportesTarifa(); fetchTransportesTarifa(); fetchAlumnos();
+            fetchFacturas(); fetchComprobantes();
+        }
         if (activeTab === 'servicios') { fetchServicios(); fetchAlumnos(); }
         if (activeTab === 'reportes') { fetchReportesStats(); fetchReportesFinancieros(); fetchReporteAcademico(); fetchReportePagos(); fetchReporteDeudores(); }
         if (activeTab === 'usuarios') fetchUsuarios();
     }, [activeTab]);
+
+    useEffect(() => {
+        if (activeTab === 'finanzas') fetchFacturas();
+    }, [activeTab, soloDeuda]);
+
+    useEffect(() => {
+        if (activeTab === 'finanzas') fetchComprobantes();
+    }, [activeTab, comprobanteEstado]);
 
     const fetchUsuarios = async () => {
         try {
@@ -246,9 +264,11 @@ const AdminDashboard = () => {
         } catch (error) { console.error('Error reporte de pagos:', error); }
     };
 
+    // "Deudores" ahora es, simplemente, el listado de facturas con saldo > 0
+    // (antes era un saldo agregado por alumno en una tabla separada).
     const fetchReporteDeudores = async () => {
         try {
-            const response = await apiFetch(`${API_URL}/api/financiero/deudores`);
+            const response = await apiFetch(`${API_URL}/api/financiero/facturas?soloDeuda=1`);
             if (response.ok) setReporteDeudores(await response.json());
         } catch (error) { console.error('Error listado deudores:', error); }
     };
@@ -301,14 +321,14 @@ const AdminDashboard = () => {
 
     const exportDeudores = async () => {
         try {
-            const r = await apiFetch(`${API_URL}/api/financiero/deudores`);
+            const r = await apiFetch(`${API_URL}/api/financiero/facturas?soloDeuda=1`);
             if (!r.ok) return alert('No se pudo obtener el listado de deudores.');
             const data = await r.json();
             if (data.length === 0) return alert('No hay deudores registrados.');
             exportCSV(
                 `deudores_${new Date().toISOString().slice(0,10)}.csv`,
-                ['ID', 'Apellido', 'Nombre', 'DNI', 'Saldo Pendiente'],
-                data.map(d => [d.id, d.apellido, d.nombre, d.dni, d.saldo_pendiente])
+                ['Factura', 'Apellido', 'Nombre', 'DNI', 'Período', 'Saldo Pendiente'],
+                data.map(d => [d.id, d.alumno_apellido, d.alumno_nombre, d.alumno_dni, d.periodo, d.saldo])
             );
         } catch (e) { console.error(e); alert('Error al exportar.'); }
     };
@@ -356,15 +376,49 @@ const AdminDashboard = () => {
         );
     };
 
-    const fetchFinanzas = async () => {
+    const fetchTarifas = async () => {
         try {
-            const token = localStorage.getItem('token');
-            const response = await fetch(`${API_URL}/api/financiero/cuotas-config`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            const data = await response.json();
-            if (response.ok) setCuotasConfig(data);
+            const response = await apiFetch(`${API_URL}/api/financiero/tarifas`);
+            if (response.ok) setTarifas(await response.json());
         } catch (error) { console.error(error); }
+    };
+
+    // Deportes activos, para el selector de tarifa cuando tipo_servicio = 'deporte'.
+    const fetchDeportesTarifa = async () => {
+        try {
+            const response = await apiFetch(`${API_URL}/api/deportes`);
+            if (response.ok) setDeportesTarifa(await response.json());
+        } catch (error) { console.error('Error deportes:', error); }
+    };
+
+    // Recorridos de transporte, para el selector de tarifa cuando tipo_servicio = 'transporte'.
+    const fetchTransportesTarifa = async () => {
+        try {
+            const response = await apiFetch(`${API_URL}/api/transporte`);
+            if (response.ok) setTransportesTarifa(await response.json());
+        } catch (error) { console.error('Error transportes:', error); }
+    };
+
+    const fetchFacturas = async () => {
+        try {
+            const response = await apiFetch(`${API_URL}/api/financiero/facturas${soloDeuda ? '?soloDeuda=1' : ''}`);
+            if (response.ok) setFacturas(await response.json());
+        } catch (error) { console.error('Error facturas:', error); }
+    };
+
+    const verDetalleFactura = async (facturaId) => {
+        if (facturaAbierta === facturaId) { setFacturaAbierta(null); return; }
+        try {
+            const response = await apiFetch(`${API_URL}/api/financiero/facturas/${facturaId}/detalle`);
+            if (response.ok) { setDetalleFactura(await response.json()); setFacturaAbierta(facturaId); }
+        } catch (error) { console.error('Error detalle factura:', error); }
+    };
+
+    const fetchComprobantes = async () => {
+        try {
+            const response = await apiFetch(`${API_URL}/api/financiero/comprobantes${comprobanteEstado ? `?estado=${comprobanteEstado}` : ''}`);
+            if (response.ok) setComprobantes(await response.json());
+        } catch (error) { console.error('Error comprobantes:', error); }
     };
 
     const fetchServicios = async () => {
@@ -728,83 +782,73 @@ const AdminDashboard = () => {
         p.dni.includes(searchTermPersonal)
     );
 
-    const handleCuotaSubmit = async (e) => {
+    const handleTarifaSubmit = async (e) => {
         e.preventDefault();
         const form = e.target;
-        const cuotaData = {
-            nivel_id: form.nivel_id.value,
+        const tipo_servicio = form.tipo_servicio.value;
+        const tarifaData = {
+            tipo_servicio,
+            descripcion: form.descripcion.value.trim() || null,
             monto: form.monto.value,
-            mes: parseInt(form.mes.value),
-            anio: parseInt(form.anio.value),
-            vencimiento: form.vencimiento.value
+            vigencia: form.vigencia.value,
+            deporte_id: tipo_servicio === 'deporte' && form.deporte_id.value ? parseInt(form.deporte_id.value) : null,
+            transporte_id: tipo_servicio === 'transporte' && form.transporte_id.value ? parseInt(form.transporte_id.value) : null
         };
 
         try {
-            const response = await apiFetch(`${API_URL}/api/financiero/cuotas-config`, {
+            const response = await apiFetch(`${API_URL}/api/financiero/tarifas`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(cuotaData)
+                body: JSON.stringify(tarifaData)
             });
-            if (response.ok) { form.reset(); fetchFinanzas(); }
-            else { const errorBody = await response.json().catch(() => ({})); alert(errorBody.message || 'Error al guardar la cuota'); }
+            if (response.ok) { form.reset(); fetchTarifas(); }
+            else { const errorBody = await response.json().catch(() => ({})); alert(errorBody.message || 'Error al guardar la tarifa'); }
         } catch (error) { console.error(error); }
     };
 
-    const fetchPagos = async () => {
+    const deleteTarifa = async (id) => {
+        if (!window.confirm('¿Desactivar esta tarifa?')) return;
         try {
-            const response = await apiFetch(`${API_URL}/api/financiero/pagos`);
-            if (response.ok) setPagos(await response.json());
-        } catch (error) { console.error('Error pagos:', error); }
+            const response = await apiFetch(`${API_URL}/api/financiero/tarifas/${id}`, { method: 'DELETE' });
+            if (response.ok) fetchTarifas();
+        } catch (error) { console.error(error); }
     };
 
-    // Descarga el comprobante de pago en PDF (se solicita con el token y se guarda como archivo).
-    const descargarComprobante = async (pagoId) => {
+    // Abre el archivo del comprobante (imagen o PDF) en una pestaña nueva.
+    const verComprobante = async (comprobanteId) => {
         try {
-            const response = await apiFetch(`${API_URL}/api/financiero/comprobante/${pagoId}`);
-            if (!response.ok) {
-                const errorBody = await response.json().catch(() => ({}));
-                return alert(errorBody.message || 'No se pudo generar el comprobante');
-            }
-            const blob = await response.blob();
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.href = url;
-            link.setAttribute('download', `comprobante_pago_${pagoId}.pdf`);
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            URL.revokeObjectURL(url);
-        } catch (error) { console.error(error); alert('Error al descargar el comprobante'); }
+            const response = await apiFetch(`${API_URL}/api/financiero/comprobantes/${comprobanteId}/archivo`);
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) return alert(data.message || 'No se pudo abrir el comprobante');
+            window.open(data.url, '_blank');
+        } catch (error) { console.error(error); alert('Error al abrir el comprobante'); }
     };
 
-    const handlePagoSubmit = async (e) => {
-        e.preventDefault();
-        const form = e.target;
-        const pagoData = {
-            alumno_id: parseInt(form.alumno_id.value),
-            cuota_id: form.cuota_id.value ? parseInt(form.cuota_id.value) : null,
-            monto_pagado: parseFloat(form.monto_pagado.value),
-            metodo_pago: form.metodo_pago.value
-        };
-        if (!pagoData.alumno_id || isNaN(pagoData.monto_pagado) || pagoData.monto_pagado <= 0) {
-            return alert('Complete alumno y monto válido (> 0).');
-        }
+    const aprobarComprobante = async (id) => {
+        if (!window.confirm('¿Aprobar este comprobante? Se descontará el monto de la factura.')) return;
         try {
-            const response = await apiFetch(`${API_URL}/api/financiero/pagos`, {
+            const response = await apiFetch(`${API_URL}/api/financiero/comprobantes/${id}/aprobar`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(pagoData)
+                body: JSON.stringify({})
             });
-            if (response.ok) {
-                const data = await response.json().catch(() => ({}));
-                form.reset();
-                fetchPagos();
-                if (data.pago_id && window.confirm('Pago registrado correctamente.\n¿Descargar el comprobante en PDF?')) {
-                    descargarComprobante(data.pago_id);
-                }
-            }
-            else { const errorBody = await response.json().catch(() => ({})); alert(errorBody.message || 'Error al registrar el pago'); }
-        } catch (error) { console.error(error); alert('Error de conexión'); }
+            if (response.ok) { fetchComprobantes(); fetchFacturas(); }
+            else { const errorBody = await response.json().catch(() => ({})); alert(errorBody.message || 'No se pudo aprobar el comprobante'); }
+        } catch (error) { console.error(error); }
+    };
+
+    const rechazarComprobante = async (id) => {
+        const observaciones = window.prompt('Motivo del rechazo (opcional):') || '';
+        if (!window.confirm('¿Rechazar este comprobante?')) return;
+        try {
+            const response = await apiFetch(`${API_URL}/api/financiero/comprobantes/${id}/rechazar`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ observaciones })
+            });
+            if (response.ok) fetchComprobantes();
+            else { const errorBody = await response.json().catch(() => ({})); alert(errorBody.message || 'No se pudo rechazar el comprobante'); }
+        } catch (error) { console.error(error); }
     };
 
     const handleRutaSubmit = async (e) => {
@@ -857,18 +901,6 @@ const AdminDashboard = () => {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             if (response.ok) fetchServicios();
-        } catch (error) { console.error(error); }
-    };
-
-    const deleteCuota = async (id) => {
-        if (!window.confirm('¿Eliminar esta configuración de cuota?')) return;
-        try {
-            const token = localStorage.getItem('token');
-            const response = await fetch(`${API_URL}/api/financiero/cuotas-config/${id}`, {
-                method: 'DELETE',
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (response.ok) fetchFinanzas();
         } catch (error) { console.error(error); }
     };
 
@@ -1335,119 +1367,177 @@ const AdminDashboard = () => {
             {activeTab === 'finanzas' && (
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
                     <div style={{ background: 'var(--white)', padding: '24px', borderRadius: 'var(--radius)', boxShadow: 'var(--shadow-sm)' }}>
-                        <h2 style={{ fontSize: '1.25rem', color: 'var(--blue)', fontWeight: 800, marginBottom: '24px' }}>Establecer Cuotas</h2>
-                        <form onSubmit={handleCuotaSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                        <h2 style={{ fontSize: '1.25rem', color: 'var(--blue)', fontWeight: 800, marginBottom: '24px' }}>Establecer Tarifas</h2>
+                        <form onSubmit={handleTarifaSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                             <div>
-                                <label style={labelStyle}>Nivel</label>
-                                <select name="nivel_id" required style={inputStyle}>
-                                    <option value="">Seleccionar Nivel</option>
-                                    {niveles.map(n => <option key={n.id} value={n.id}>{n.nombre}</option>)}
+                                <label style={labelStyle}>Tipo de servicio</label>
+                                <select name="tipo_servicio" required style={inputStyle} defaultValue="cuota">
+                                    <option value="cuota">Cuota</option>
+                                    <option value="deporte">Deporte</option>
+                                    <option value="transporte">Transporte</option>
+                                    <option value="comedor">Comedor</option>
                                 </select>
                             </div>
                             <div>
-                                <label style={labelStyle}>Monto Mensual ($)</label>
+                                <label style={labelStyle}>Deporte (solo si el tipo es "Deporte")</label>
+                                <select name="deporte_id" style={inputStyle} defaultValue="">
+                                    <option value="">Sin asociar</option>
+                                    {deportesTarifa.map(d => <option key={d.id} value={d.id}>{d.nombre}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <label style={labelStyle}>Recorrido (solo si el tipo es "Transporte")</label>
+                                <select name="transporte_id" style={inputStyle} defaultValue="">
+                                    <option value="">Sin asociar</option>
+                                    {transportesTarifa.map(t => <option key={t.id} value={t.id}>Recorrido {t.numero_recorrido} — {t.nombre}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <label style={labelStyle}>Descripción</label>
+                                <input type="text" name="descripcion" placeholder="Ej: Cuota mensual Nivel Primario" style={inputStyle} />
+                            </div>
+                            <div>
+                                <label style={labelStyle}>Monto ($)</label>
                                 <input type="number" name="monto" min="0.01" step="0.01" placeholder="Ej: 45000.00" required style={inputStyle} />
                             </div>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                                <div>
-                                    <label style={labelStyle}>Mes</label>
-                                    <select name="mes" required style={inputStyle} defaultValue={new Date().getMonth() + 1}>
-                                        {['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'].map((m, i) => (
-                                            <option key={i+1} value={i+1}>{m}</option>
-                                        ))}
-                                    </select>
-                                </div>
-                                <div>
-                                    <label style={labelStyle}>Año</label>
-                                    <input type="number" name="anio" min="2024" max="2099" required style={inputStyle} defaultValue={new Date().getFullYear()} />
-                                </div>
-                            </div>
                             <div>
-                                <label style={labelStyle}>Vencimiento</label>
-                                <input type="date" name="vencimiento" required style={inputStyle} />
+                                <label style={labelStyle}>Vigencia (desde)</label>
+                                <input type="date" name="vigencia" required style={inputStyle} />
                             </div>
-                            <button type="submit" className="btn btn-hero-orange" style={{ padding: '14px', color: 'white' }}>Guardar Configuración</button>
+                            <button type="submit" className="btn btn-hero-orange" style={{ padding: '14px', color: 'white' }}>Guardar Tarifa</button>
                         </form>
 
-                        <div style={{ marginTop: '32px', paddingTop: '24px', borderTop: '1px solid #e2e8f0' }}>
-                            <h3 style={{ fontSize: '1.05rem', color: 'var(--blue)', fontWeight: 800, marginBottom: '16px' }}>💵 Registrar Pago</h3>
-                            <form onSubmit={handlePagoSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                                <select name="alumno_id" required style={inputStyle}>
-                                    <option value="">Seleccionar Alumno</option>
-                                    {alumnos.map(a => <option key={a.id} value={a.id}>{a.apellido}, {a.nombre} (DNI {a.dni})</option>)}
-                                </select>
-                                <select name="cuota_id" style={inputStyle}>
-                                    <option value="">Cuota (opcional)</option>
-                                    {cuotasConfig.map(c => <option key={c.id} value={c.id}>{c.nivel_nombre} · {c.mes}/{c.anio} · ${c.monto}</option>)}
-                                </select>
-                                <input type="number" min="0.01" step="0.01" name="monto_pagado" placeholder="Monto pagado" required style={inputStyle} />
-                                <select name="metodo_pago" required style={inputStyle} defaultValue="Efectivo">
-                                    <option value="Efectivo">Efectivo</option>
-                                    <option value="Transferencia">Transferencia</option>
-                                    <option value="Tarjeta">Tarjeta</option>
-                                    <option value="Otro">Otro</option>
-                                </select>
-                                <button type="submit" className="btn btn-green">Registrar Pago</button>
-                            </form>
-                        </div>
-                    </div>
-
-                    <div style={{ background: 'var(--white)', padding: '24px', borderRadius: 'var(--radius)', boxShadow: 'var(--shadow-sm)' }}>
-                        <h2 style={{ fontSize: '1.25rem', color: 'var(--blue)', fontWeight: 800, marginBottom: '24px' }}>Cuotas Configuradas</h2>
+                        <h3 style={{ fontSize: '1.05rem', color: 'var(--blue)', fontWeight: 800, margin: '32px 0 16px' }}>Tarifas vigentes</h3>
                         <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
                             <thead>
                                 <tr style={{ borderBottom: '2px solid #f1f5f9' }}>
-                                    <th style={thStyle}>Nivel</th>
+                                    <th style={thStyle}>Servicio</th>
                                     <th style={thStyle}>Monto</th>
-                                    <th style={thStyle}>Mes/Año</th>
+                                    <th style={thStyle}>Vigencia</th>
                                     <th style={thStyle}>Acción</th>
                                 </tr>
                             </thead>
-                                <tbody>
-                                    {cuotasConfig.length === 0 ? (
-                                        <tr><td colSpan="4" style={{ textAlign: 'center', padding: '20px' }}>No hay cuotas configuradas.</td></tr>
-                                    ) : (
-                                        cuotasConfig.map(c => (
-                                            <tr key={c.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                                                <td style={tdStyle}>{c.nivel_nombre}</td>
-                                                <td style={tdStyle}><strong>${c.monto}</strong></td>
-                                                <td style={tdStyle}>{c.mes}/{c.anio}</td>
-                                                <td style={tdStyle}>
-                                                    <button onClick={() => deleteCuota(c.id)} style={{ background: 'none', border: 'none', color: '#dc2626', fontWeight: 700, cursor: 'pointer' }}>Eliminar</button>
-                                                </td>
-                                            </tr>
-                                        ))
-                                    )}
-                                </tbody>
-                        </table>
-
-                        <h2 style={{ fontSize: '1.25rem', color: 'var(--blue)', fontWeight: 800, margin: '32px 0 16px' }}>Pagos Registrados</h2>
-                        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-                            <thead>
-                                <tr style={{ borderBottom: '2px solid #f1f5f9' }}>
-                                    <th style={thStyle}>Fecha</th>
-                                    <th style={thStyle}>Alumno</th>
-                                    <th style={thStyle}>Monto</th>
-                                    <th style={thStyle}>Comprobante</th>
-                                </tr>
-                            </thead>
                             <tbody>
-                                {pagos.length === 0 ? (
-                                    <tr><td colSpan="4" style={{ textAlign: 'center', padding: '20px' }}>No hay pagos registrados.</td></tr>
+                                {tarifas.length === 0 ? (
+                                    <tr><td colSpan="4" style={{ textAlign: 'center', padding: '20px' }}>No hay tarifas configuradas.</td></tr>
                                 ) : (
-                                    pagos.map(p => (
-                                        <tr key={p.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                                            <td style={tdStyle}>{p.fecha_pago ? new Date(p.fecha_pago).toLocaleDateString('es-AR') : '-'}</td>
-                                            <td style={tdStyle}>{p.alumno_apellido}, {p.alumno_nombre}</td>
-                                            <td style={tdStyle}><strong>${Number(p.monto_pagado).toFixed(2)}</strong></td>
+                                    tarifas.map(t => (
+                                        <tr key={t.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                                            <td style={tdStyle}>{t.descripcion || t.tipo_servicio}{t.deporte_nombre ? ` (${t.deporte_nombre})` : ''}{t.transporte_nombre ? ` (${t.transporte_nombre})` : ''}</td>
+                                            <td style={tdStyle}><strong>${Number(t.monto).toFixed(2)}</strong></td>
+                                            <td style={tdStyle}>{t.vigencia}{t.vigencia_hasta ? ` a ${t.vigencia_hasta}` : ''}</td>
                                             <td style={tdStyle}>
-                                                <button onClick={() => descargarComprobante(p.id)} style={{ background: 'none', border: 'none', color: 'var(--blue)', fontWeight: 700, cursor: 'pointer' }}>📄 Descargar PDF</button>
+                                                {t.activo && <button onClick={() => deleteTarifa(t.id)} style={{ background: 'none', border: 'none', color: '#dc2626', fontWeight: 700, cursor: 'pointer' }}>Desactivar</button>}
                                             </td>
                                         </tr>
                                     ))
                                 )}
                             </tbody>
                         </table>
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                        <div style={{ background: 'var(--white)', padding: '24px', borderRadius: 'var(--radius)', boxShadow: 'var(--shadow-sm)' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                                <h2 style={{ fontSize: '1.25rem', color: 'var(--blue)', fontWeight: 800 }}>Facturas</h2>
+                                <label style={{ fontSize: '0.8rem', display: 'flex', gap: '6px', alignItems: 'center' }}>
+                                    <input type="checkbox" checked={soloDeuda} onChange={(e) => setSoloDeuda(e.target.checked)} />
+                                    Solo con deuda
+                                </label>
+                            </div>
+                            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                                <thead>
+                                    <tr style={{ borderBottom: '2px solid #f1f5f9' }}>
+                                        <th style={thStyle}>Alumno</th>
+                                        <th style={thStyle}>Período</th>
+                                        <th style={thStyle}>Estado</th>
+                                        <th style={thStyle}>Saldo</th>
+                                        <th style={thStyle}></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {facturas.length === 0 ? (
+                                        <tr><td colSpan="5" style={{ textAlign: 'center', padding: '20px' }}>No hay facturas para mostrar.</td></tr>
+                                    ) : (
+                                        facturas.map(f => (
+                                            <React.Fragment key={f.id}>
+                                                <tr style={{ borderBottom: '1px solid #f1f5f9' }}>
+                                                    <td style={tdStyle}>{f.alumno_apellido}, {f.alumno_nombre}</td>
+                                                    <td style={tdStyle}>{f.periodo}</td>
+                                                    <td style={tdStyle}>{f.estado}</td>
+                                                    <td style={tdStyle}><strong>${Number(f.saldo).toFixed(2)}</strong> / ${Number(f.total).toFixed(2)}</td>
+                                                    <td style={tdStyle}>
+                                                        <button onClick={() => verDetalleFactura(f.id)} style={{ background: 'none', border: 'none', color: 'var(--blue)', fontWeight: 700, cursor: 'pointer' }}>
+                                                            {facturaAbierta === f.id ? 'Ocultar' : 'Ver detalle'}
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                                {facturaAbierta === f.id && (
+                                                    <tr>
+                                                        <td colSpan="5" style={{ padding: '8px 16px', background: '#f8fafc' }}>
+                                                            {detalleFactura.length === 0 ? 'Sin conceptos.' : (
+                                                                <ul style={{ margin: 0, paddingLeft: '18px' }}>
+                                                                    {detalleFactura.map(d => (
+                                                                        <li key={d.id}>{d.descripcion}: ${Number(d.subtotal).toFixed(2)}</li>
+                                                                    ))}
+                                                                </ul>
+                                                            )}
+                                                        </td>
+                                                    </tr>
+                                                )}
+                                            </React.Fragment>
+                                        ))
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div style={{ background: 'var(--white)', padding: '24px', borderRadius: 'var(--radius)', boxShadow: 'var(--shadow-sm)' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                                <h2 style={{ fontSize: '1.25rem', color: 'var(--blue)', fontWeight: 800 }}>Comprobantes de transferencia</h2>
+                                <select value={comprobanteEstado} onChange={(e) => setComprobanteEstado(e.target.value)} style={{ ...inputStyle, width: 'auto', padding: '6px 10px' }}>
+                                    <option value="Pendiente">Pendientes</option>
+                                    <option value="Aprobado">Aprobados</option>
+                                    <option value="Rechazado">Rechazados</option>
+                                    <option value="">Todos</option>
+                                </select>
+                            </div>
+                            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                                <thead>
+                                    <tr style={{ borderBottom: '2px solid #f1f5f9' }}>
+                                        <th style={thStyle}>Alumno</th>
+                                        <th style={thStyle}>Período</th>
+                                        <th style={thStyle}>Monto</th>
+                                        <th style={thStyle}>Cargado</th>
+                                        <th style={thStyle}>Acción</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {comprobantes.length === 0 ? (
+                                        <tr><td colSpan="5" style={{ textAlign: 'center', padding: '20px' }}>No hay comprobantes para mostrar.</td></tr>
+                                    ) : (
+                                        comprobantes.map(c => (
+                                            <tr key={c.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                                                <td style={tdStyle}>{c.alumno_apellido}, {c.alumno_nombre}</td>
+                                                <td style={tdStyle}>{c.periodo}</td>
+                                                <td style={tdStyle}><strong>${Number(c.monto).toFixed(2)}</strong></td>
+                                                <td style={tdStyle}>{new Date(c.fecha_carga).toLocaleDateString('es-AR')}</td>
+                                                <td style={tdStyle}>
+                                                    <button onClick={() => verComprobante(c.id)} style={{ background: 'none', border: 'none', color: 'var(--blue)', fontWeight: 700, cursor: 'pointer', marginRight: '10px' }}>Ver</button>
+                                                    {c.estado_verificacion === 'Pendiente' && (
+                                                        <>
+                                                            <button onClick={() => aprobarComprobante(c.id)} style={{ background: 'none', border: 'none', color: '#166534', fontWeight: 700, cursor: 'pointer', marginRight: '10px' }}>Aprobar</button>
+                                                            <button onClick={() => rechazarComprobante(c.id)} style={{ background: 'none', border: 'none', color: '#dc2626', fontWeight: 700, cursor: 'pointer' }}>Rechazar</button>
+                                                        </>
+                                                    )}
+                                                    {c.estado_verificacion !== 'Pendiente' && <span style={{ fontSize: '0.8rem', color: '#64748b' }}>{c.estado_verificacion}</span>}
+                                                </td>
+                                            </tr>
+                                        ))
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
             )}
@@ -1583,9 +1673,9 @@ const AdminDashboard = () => {
                     <div style={{ gridColumn: '1 / -1', background: 'var(--white)', padding: '24px', borderRadius: 'var(--radius)', boxShadow: 'var(--shadow-sm)', overflowX: 'auto' }}>
                         <h2 style={{ fontSize: '1.1rem', color: 'var(--blue)', fontWeight: 800, marginBottom: '16px' }}>⚠️ Listado de deudores</h2>
                         <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-                            <thead><tr style={{ borderBottom: '2px solid #f1f5f9' }}><th style={thStyle}>Alumno</th><th style={thStyle}>DNI</th><th style={thStyle}>Saldo pendiente</th></tr></thead>
-                            <tbody>{reporteDeudores.map((r) => <tr key={r.id} style={{ borderBottom: '1px solid #f1f5f9' }}><td style={tdStyle}>{r.apellido}, {r.nombre}</td><td style={tdStyle}>{r.dni}</td><td style={tdStyle}>${Number(r.saldo_pendiente || 0).toFixed(2)}</td></tr>)}
-                                {!reporteDeudores.length && <tr><td colSpan="3" style={{ padding: 16, color: '#64748b' }}>No hay deudas pendientes.</td></tr>}</tbody>
+                            <thead><tr style={{ borderBottom: '2px solid #f1f5f9' }}><th style={thStyle}>Alumno</th><th style={thStyle}>DNI</th><th style={thStyle}>Período</th><th style={thStyle}>Saldo pendiente</th></tr></thead>
+                            <tbody>{reporteDeudores.map((r) => <tr key={r.id} style={{ borderBottom: '1px solid #f1f5f9' }}><td style={tdStyle}>{r.alumno_apellido}, {r.alumno_nombre}</td><td style={tdStyle}>{r.alumno_dni}</td><td style={tdStyle}>{r.periodo}</td><td style={tdStyle}>${Number(r.saldo || 0).toFixed(2)}</td></tr>)}
+                                {!reporteDeudores.length && <tr><td colSpan="4" style={{ padding: 16, color: '#64748b' }}>No hay deudas pendientes.</td></tr>}</tbody>
                         </table>
                     </div>
 

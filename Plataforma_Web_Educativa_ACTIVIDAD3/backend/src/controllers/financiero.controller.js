@@ -1,15 +1,38 @@
-const db = require('../config/database');
-const { sql, getPool } = require('../config/db');
-const PDFDocument = require('pdfkit');
+const { getPool } = require('../config/db');
 const { NOMBRE_REGEX } = require('../utils/validators');
-const { manejarErrorSQL, manejarErrorMssql } = require('../utils/dbErrors');
+const { manejarErrorPg } = require('../utils/dbErrors');
 const { calcularHash, guardarComprobante, eliminarComprobante } = require('../services/comprobanteStorage');
+const { obtenerUrlFirmada, BUCKET_COMPROBANTES } = require('../config/supabaseStorage');
+
+// Módulo financiero: SOLO el sistema de facturación/comprobantes (antes en
+// SQL Server). El sistema viejo de SQLite (cuotas_config/pagos/saldos_alumnos,
+// con alta manual de pagos por el admin) se eliminó por completo -ver
+// backend/supabase/schema.sql-: el flujo ahora es que el padre/alumno sube el
+// comprobante de transferencia y el admin lo aprueba o rechaza desde la
+// bandeja de verificación (getComprobantes/aprobarComprobante/rechazarComprobante).
 
 function respuestaErrorComprobante(res, status, message) {
     return res.status(status).json({ message });
 }
 
-// Recibe, calcula SHA-256, evita duplicados y registra el comprobante en SQL Server.
+// nombre_archivo viene del nombre original que subió el usuario: nunca se
+// usa tal cual en una cabecera HTTP (CRLF/comillas podrían inyectar otras
+// cabeceras o romper el Content-Disposition).
+function sanitizarNombreArchivo(nombre) {
+    const limpio = String(nombre || '').replace(/[^\w .-]/g, '').slice(0, 150).trim();
+    return limpio || 'comprobante';
+}
+
+// tipo_mime también viene del archivo que subió el usuario (ver
+// uploadComprobante.js): aunque ya se valida al subirlo, se revalida acá
+// contra la misma lista blanca antes de usarlo para armar la respuesta, en
+// vez de confiar en lo que haya quedado guardado en la base.
+const TIPOS_MIME_PERMITIDOS = new Set(['image/jpeg', 'image/png', 'application/pdf']);
+function tipoMimeSeguro(tipoMime) {
+    return TIPOS_MIME_PERMITIDOS.has(tipoMime) ? tipoMime : 'application/octet-stream';
+}
+
+// Recibe el comprobante, calcula SHA-256, evita duplicados y lo registra.
 exports.subirComprobante = async (req, res) => {
     const facturaId = Number.parseInt(req.body.factura_id, 10);
     const monto = Number(req.body.monto);
@@ -19,15 +42,12 @@ exports.subirComprobante = async (req, res) => {
     if (!Number.isInteger(facturaId) || facturaId <= 0) {
         return respuestaErrorComprobante(res, 400, 'factura_id inválido');
     }
-
     if (!archivo) {
         return respuestaErrorComprobante(res, 400, 'Debe enviar el archivo en el campo archivo');
     }
-
     if (!Number.isFinite(monto) || monto <= 0) {
         return respuestaErrorComprobante(res, 400, 'El monto debe ser mayor que cero');
     }
-
     if (!/^\d{4}-\d{2}-\d{2}$/.test(String(fechaTransferencia || ''))) {
         return respuestaErrorComprobante(res, 400, 'fecha_transferencia debe tener formato YYYY-MM-DD');
     }
@@ -37,288 +57,241 @@ exports.subirComprobante = async (req, res) => {
 
     try {
         const pool = await getPool();
-        const acceso = await pool.request()
-            .input('facturaId', sql.Int, facturaId)
-            .input('usuarioId', sql.Int, req.user.id)
-            .input('rol', sql.VarChar(20), req.user.rol)
-            .query(`
-                SELECT f.id
-                FROM dbo.Factura f
-                INNER JOIN dbo.Alumnos a ON a.id = f.alumno_id
-                WHERE f.id = @facturaId
-                  AND (
-                      @rol = 'admin'
-                      OR (@rol = 'alumno' AND a.usuario_id = @usuarioId)
-                      OR (@rol = 'padre' AND a.padre_id = @usuarioId)
-                  )
-            `);
+        const acceso = await pool.query(
+            `SELECT f.id
+             FROM factura f
+             INNER JOIN alumnos a ON a.id = f.alumno_id
+             WHERE f.id = $1
+               AND (
+                   $2 = 'admin'
+                   OR ($2 = 'alumno' AND a.usuario_id = $3)
+                   OR ($2 = 'padre' AND a.padre_id = $3)
+               )`,
+            [facturaId, req.user.rol, req.user.id]
+        );
 
-        if (!acceso.recordset.length) {
+        if (!acceso.rows.length) {
             return respuestaErrorComprobante(res, 404, 'Factura inexistente o sin permisos');
         }
 
-        const duplicado = await pool.request()
-            .input('hashArchivo', sql.VarChar(128), hashArchivo)
-            .query(`
-                SELECT TOP 1 id
-                FROM dbo.ComprobanteTransferencia
-                WHERE hash_archivo = @hashArchivo
-            `);
+        const duplicado = await pool.query(
+            'SELECT id FROM comprobante_transferencia WHERE hash_archivo = $1 LIMIT 1',
+            [hashArchivo]
+        );
 
-        if (duplicado.recordset.length) {
+        if (duplicado.rows.length) {
             return respuestaErrorComprobante(res, 409, 'El archivo ya fue cargado anteriormente');
         }
 
         comprobanteGuardado = await guardarComprobante(archivo);
 
-        const insertado = await pool.request()
-            .input('facturaId', sql.Int, facturaId)
-            .input('nombreArchivo', sql.NVarChar(255), comprobanteGuardado.nombreArchivo)
-            .input('rutaArchivo', sql.NVarChar(500), comprobanteGuardado.rutaArchivo)
-            .input('tipoMime', sql.VarChar(100), archivo.mimetype)
-            .input('tamanoBytes', sql.BigInt, archivo.size)
-            .input('monto', sql.Decimal(12, 2), monto)
-            .input('fechaTransferencia', sql.Date, fechaTransferencia)
-            .input('hashArchivo', sql.VarChar(128), hashArchivo)
-            .query(`
-                INSERT INTO dbo.ComprobanteTransferencia
-                    (factura_id, nombre_archivo, ruta_archivo, tipo_mime,
-                     tamano_bytes, monto, fecha_transferencia, hash_archivo,
-                     estado_verificacion)
-                OUTPUT INSERTED.id, INSERTED.factura_id, INSERTED.nombre_archivo,
-                       INSERTED.monto, INSERTED.fecha_transferencia,
-                       INSERTED.hash_archivo, INSERTED.estado_verificacion
-                VALUES
-                    (@facturaId, @nombreArchivo, @rutaArchivo, @tipoMime,
-                     @tamanoBytes, @monto, @fechaTransferencia, @hashArchivo,
-                     'Pendiente')
-            `);
+        const insertado = await pool.query(
+            `INSERT INTO comprobante_transferencia
+                (factura_id, nombre_archivo, ruta_archivo, tipo_mime,
+                 tamano_bytes, monto, fecha_transferencia, hash_archivo,
+                 estado_verificacion)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'Pendiente')
+             RETURNING id, factura_id, nombre_archivo, monto, fecha_transferencia, hash_archivo, estado_verificacion`,
+            [facturaId, comprobanteGuardado.nombreArchivo, comprobanteGuardado.rutaArchivo,
+                archivo.mimetype, archivo.size, monto, fechaTransferencia, hashArchivo]
+        );
 
         return res.status(201).json({
             message: 'Comprobante cargado correctamente',
-            comprobante: insertado.recordset[0]
+            comprobante: insertado.rows[0]
         });
     } catch (err) {
         if (comprobanteGuardado) {
             await eliminarComprobante(comprobanteGuardado.rutaArchivo);
         }
-
-        if (err.number === 2627 || err.number === 2601) {
+        if (err.code === '23505') {
             return respuestaErrorComprobante(res, 409, 'El archivo ya fue cargado anteriormente');
         }
-
-        return manejarErrorMssql(res, err);
+        return manejarErrorPg(res, err);
     }
 };
 
-// --- PERSONAL ---
-exports.getPersonal = (req, res) => {
-    db.all("SELECT * FROM personal", [], (err, rows) => {
-        if (err) return manejarErrorSQL(res, err);
-        res.json(rows);
-    });
-};
-
-exports.createPersonal = (req, res) => {
-    const { nombre, apellido, dni, tipo, email } = req.body;
-    if (!nombre || !apellido || !dni || !tipo) return res.status(400).json({ message: "Campos obligatorios" });
-    if (!NOMBRE_REGEX.test(String(nombre).trim()) || !NOMBRE_REGEX.test(String(apellido).trim())) {
-        return res.status(400).json({ message: "Nombre y apellido solo pueden contener letras (sin números ni símbolos)" });
-    }
-    if (!/^\d+$/.test(String(dni).trim())) return res.status(400).json({ message: "El DNI debe ser numérico (sin puntos ni letras)" });
-    db.run("INSERT INTO personal (nombre, apellido, dni, tipo, email) VALUES (?, ?, ?, ?, ?)", [nombre, apellido, dni, tipo, email], function(err) {
-        if (err) return manejarErrorSQL(res, err);
-        res.status(201).json({ id: this.lastID });
-    });
-};
-
-// Modificación de legajo de personal docente / no docente (mismo ABM que alumnos).
-exports.updatePersonal = (req, res) => {
-    const { id } = req.params;
-    const { nombre, apellido, dni, tipo, email } = req.body;
-    if (!nombre || !apellido || !dni || !tipo) return res.status(400).json({ message: "Campos obligatorios" });
-    if (!NOMBRE_REGEX.test(String(nombre).trim()) || !NOMBRE_REGEX.test(String(apellido).trim())) {
-        return res.status(400).json({ message: "Nombre y apellido solo pueden contener letras (sin números ni símbolos)" });
-    }
-    if (!/^\d+$/.test(String(dni).trim())) return res.status(400).json({ message: "El DNI debe ser numérico (sin puntos ni letras)" });
-    db.run(
-        "UPDATE personal SET nombre = ?, apellido = ?, dni = ?, tipo = ?, email = ? WHERE id = ?",
-        [nombre, apellido, dni, tipo, email, id],
-        function(err) {
-            if (err) return manejarErrorSQL(res, err);
-            if (this.changes === 0) return res.status(404).json({ message: "Personal no encontrado" });
-            res.json({ message: "Legajo de personal actualizado correctamente" });
-        }
-    );
-};
-
-exports.deletePersonal = (req, res) => {
-    const { id } = req.params;
-    db.run("DELETE FROM personal WHERE id = ?", [id], function(err) {
-        if (err) return manejarErrorSQL(res, err);
-        res.json({ message: "Personal eliminado" });
-    });
-};
-
-// --- CUOTAS CONFIG ---
-exports.getCuotasConfig = (req, res) => {
-    const query = `
-        SELECT cc.*, n.nombre as nivel_nombre 
-        FROM cuotas_config cc
-        JOIN niveles n ON cc.nivel_id = n.id
-    `;
-    db.all(query, [], (err, rows) => {
-        if (err) return manejarErrorSQL(res, err);
-        res.json(rows);
-    });
-};
-
-exports.createCuotaConfig = (req, res) => {
-    const { nivel_id, monto, mes, anio, vencimiento } = req.body;
-    const montoNum = parseFloat(monto);
-    if (isNaN(montoNum) || montoNum <= 0) return res.status(400).json({ message: "El monto debe ser un decimal mayor a 0" });
-    
-    db.run("INSERT INTO cuotas_config (nivel_id, monto, mes, anio, vencimiento) VALUES (?, ?, ?, ?, ?)", [nivel_id, montoNum, mes, anio, vencimiento], function(err) {
-        if (err) return manejarErrorSQL(res, err);
-        res.status(201).json({ id: this.lastID });
-    });
-};
-
-exports.deleteCuotaConfig = (req, res) => {
-    const { id } = req.params;
-    db.run("DELETE FROM cuotas_config WHERE id = ?", [id], function(err) {
-        if (err) return manejarErrorSQL(res, err);
-        res.json({ message: "Configuración de cuota eliminada" });
-    });
-};
-
-// --- PAGOS & DEUDA ---
-exports.registrarPago = (req, res) => {
-    const { alumno_id, cuota_id, monto_pagado, metodo_pago } = req.body;
-    if (!alumno_id || monto_pagado === undefined || monto_pagado === null || monto_pagado === '') {
-        return res.status(400).json({ message: "Datos incompletos" });
-    }
-    const montoNum = parseFloat(monto_pagado);
-    if (isNaN(montoNum) || montoNum <= 0) {
-        return res.status(400).json({ message: "El monto pagado debe ser un número mayor a 0" });
-    }
-
-    db.serialize(() => {
-        db.run("BEGIN TRANSACTION");
-
-        const queryPago = "INSERT INTO pagos (alumno_id, cuota_id, monto_pagado, metodo_pago) VALUES (?, ?, ?, ?)";
-        db.run(queryPago, [alumno_id, cuota_id, montoNum, metodo_pago], function(err) {
-            if (err) {
-                db.run("ROLLBACK");
-                return res.status(500).json({ message: "Error al registrar el pago" });
-            }
-            const pagoId = this.lastID;
-
-            // Actualizar deuda
-            const queryDeuda = `
-                INSERT INTO saldos_alumnos (alumno_id, saldo_pendiente) 
-                VALUES (?, -?) 
-                ON CONFLICT(alumno_id) DO UPDATE SET 
-                saldo_pendiente = saldo_pendiente - ?, 
-                ultima_actualizacion = CURRENT_TIMESTAMP
-            `;
-            db.run(queryDeuda, [alumno_id, montoNum, montoNum], function(err) {
-                if (err) {
-                    db.run("ROLLBACK");
-                    return res.status(500).json({ message: "Error al actualizar la deuda" });
-                }
-                db.run("COMMIT");
-                // Se devuelve el id del pago para poder descargar el comprobante PDF.
-                res.status(201).json({ message: "Pago registrado y saldo actualizado", pago_id: pagoId });
-            });
-        });
-    });
-};
-
-// Genera y envía el comprobante de pago en PDF (detallado).
-// Admin puede descargar cualquiera; un padre solo los de sus hijos vinculados.
-exports.generarComprobante = (req, res) => {
-    const { pago_id } = req.params;
-    const query = `
-        SELECT p.id, p.monto_pagado, p.fecha_pago, p.metodo_pago,
-               a.nombre AS alumno_nombre, a.apellido AS alumno_apellido, a.dni AS alumno_dni,
-               a.tutor_id,
-               niveles.nombre AS nivel_nombre, cursos.division AS division,
-               cc.mes AS cuota_mes, cc.anio AS cuota_anio,
-               COALESCE(s.saldo_pendiente, 0) AS saldo_pendiente
-        FROM pagos p
-        LEFT JOIN alumnos a ON p.alumno_id = a.id
-        LEFT JOIN cursos ON a.curso_id = cursos.id
-        LEFT JOIN niveles ON cursos.nivel_id = niveles.id
-        LEFT JOIN cuotas_config cc ON p.cuota_id = cc.id
-        LEFT JOIN saldos_alumnos s ON s.alumno_id = a.id
-        WHERE p.id = ?
-    `;
-    db.get(query, [pago_id], (err, pago) => {
-        if (err) return manejarErrorSQL(res, err);
-        if (!pago) return res.status(404).json({ message: "Pago no encontrado" });
-
-        // Control de acceso para padres: solo comprobantes de sus hijos.
-        if (req.user.rol === 'padre' && pago.tutor_id !== req.user.id) {
-            return res.status(403).json({ message: "No tiene acceso a este comprobante" });
-        }
-
-        const doc = new PDFDocument({ size: 'A4', margin: 50 });
-        res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', `attachment; filename="comprobante_pago_${pago.id}.pdf"`);
-        doc.pipe(res);
-
-        const azul = '#1e40af';
-        const verde = '#166534';
-        const gris = '#64748b';
-        const formato = (n) => '$' + Number(n || 0).toFixed(2);
-        const fecha = pago.fecha_pago ? new Date(pago.fecha_pago).toLocaleString('es-AR') : '-';
-
-        // Encabezado institucional
-        doc.fillColor(azul).fontSize(22).font('Helvetica-Bold').text('Educar para Transformar', { align: 'center' });
-        doc.fillColor(gris).fontSize(10).font('Helvetica').text('C. French 414, Resistencia, Chaco · info@educartransformar.edu.ar', { align: 'center' });
-        doc.moveDown(0.5);
-        doc.moveTo(50, doc.y).lineTo(545, doc.y).strokeColor('#e2e8f0').stroke();
-        doc.moveDown(1);
-
-        // Título
-        doc.fillColor(azul).fontSize(16).font('Helvetica-Bold').text('COMPROBANTE DE PAGO', { align: 'center' });
-        doc.fillColor(gris).fontSize(11).font('Helvetica').text(`Comprobante N° ${String(pago.id).padStart(6, '0')}`, { align: 'center' });
-        doc.moveDown(1.5);
-
-        // Detalle en filas
-        const fila = (label, valor) => {
-            doc.fillColor(gris).fontSize(11).font('Helvetica-Bold').text(label, 60, doc.y, { continued: true, width: 200 });
-            doc.fillColor('#0f172a').font('Helvetica').text('  ' + valor);
-            doc.moveDown(0.4);
-        };
-
-        fila('Fecha de pago:', fecha);
-        fila('Alumno:', `${pago.alumno_apellido || ''}, ${pago.alumno_nombre || ''}`);
-        fila('DNI:', pago.alumno_dni || '-');
-        fila('Nivel / División:', pago.nivel_nombre ? `${pago.nivel_nombre} ${pago.division || ''}` : 'Sin asignar');
-        if (pago.cuota_mes) fila('Cuota:', `${pago.cuota_mes}/${pago.cuota_anio}`);
-        fila('Método de pago:', pago.metodo_pago || '-');
-
-        doc.moveDown(0.6);
-        doc.moveTo(50, doc.y).lineTo(545, doc.y).strokeColor('#e2e8f0').stroke();
-        doc.moveDown(0.8);
-
-        // Monto destacado
-        doc.fillColor(verde).fontSize(14).font('Helvetica-Bold').text(`Monto abonado: ${formato(pago.monto_pagado)}`, { align: 'right' });
-        doc.moveDown(0.3);
-        const saldo = Number(pago.saldo_pendiente || 0);
-        doc.fillColor(saldo > 0 ? '#991b1b' : verde).fontSize(11).font('Helvetica')
-            .text(saldo > 0 ? `Saldo pendiente actual: ${formato(saldo)}` : 'Cuenta al día ✓', { align: 'right' });
-
-        doc.moveDown(3);
-        doc.fillColor(gris).fontSize(9).font('Helvetica').text(
-            'Este comprobante es válido como constancia de pago. Generado automáticamente por el sistema institucional.',
-            { align: 'center' }
+// Da acceso al archivo subido (Supabase Storage) SIN que el backend lea ni
+// escriba esos bytes: devuelve una URL firmada de corta duración y el
+// cliente descarga directo de Supabase. Admin puede ver cualquiera;
+// padre/alumno solo los de su propia factura.
+exports.descargarComprobanteArchivo = async (req, res) => {
+    const id = parseInt(req.params.id);
+    if (!id) return res.status(400).json({ message: 'Comprobante inválido' });
+    try {
+        const pool = await getPool();
+        const { rows } = await pool.query(
+            `SELECT ct.ruta_archivo, ct.nombre_archivo, ct.tipo_mime, a.padre_id, a.usuario_id
+             FROM comprobante_transferencia ct
+             JOIN factura f ON f.id = ct.factura_id
+             JOIN alumnos a ON a.id = f.alumno_id
+             WHERE ct.id = $1`,
+            [id]
         );
+        const comprobante = rows[0];
+        if (!comprobante) return res.status(404).json({ message: 'Comprobante no encontrado' });
 
-        doc.end();
-    });
+        const tieneAcceso = req.user.rol === 'admin'
+            || (req.user.rol === 'padre' && comprobante.padre_id === req.user.id)
+            || (req.user.rol === 'alumno' && comprobante.usuario_id === req.user.id);
+        if (!tieneAcceso) return res.status(403).json({ message: 'No tiene acceso a este comprobante' });
+
+        const url = await obtenerUrlFirmada(BUCKET_COMPROBANTES, comprobante.ruta_archivo, 60);
+        res.json({
+            url,
+            nombre_archivo: sanitizarNombreArchivo(comprobante.nombre_archivo),
+            tipo_mime: tipoMimeSeguro(comprobante.tipo_mime)
+        });
+    } catch (err) {
+        manejarErrorPg(res, err);
+    }
+};
+
+// --- PERSONAL (legajo no docente: no es financiero, pero vive en este
+// controlador/ruta por compatibilidad con el frontend ya existente). ---
+exports.getPersonal = async (req, res) => {
+    try {
+        const pool = await getPool();
+        const { rows } = await pool.query('SELECT * FROM personal');
+        res.json(rows);
+    } catch (err) { manejarErrorPg(res, err); }
+};
+
+exports.createPersonal = async (req, res) => {
+    const { nombre, apellido, dni, tipo, email } = req.body;
+    if (!nombre || !apellido || !dni || !tipo) return res.status(400).json({ message: "Campos obligatorios" });
+    if (!NOMBRE_REGEX.test(String(nombre).trim()) || !NOMBRE_REGEX.test(String(apellido).trim())) {
+        return res.status(400).json({ message: "Nombre y apellido solo pueden contener letras (sin números ni símbolos)" });
+    }
+    if (!/^\d+$/.test(String(dni).trim())) return res.status(400).json({ message: "El DNI debe ser numérico (sin puntos ni letras)" });
+    try {
+        const pool = await getPool();
+        const { rows } = await pool.query(
+            'INSERT INTO personal (nombre, apellido, dni, tipo, email) VALUES ($1, $2, $3, $4, $5) RETURNING id',
+            [nombre, apellido, dni, tipo, email]
+        );
+        res.status(201).json({ id: rows[0].id });
+    } catch (err) { manejarErrorPg(res, err); }
+};
+
+exports.updatePersonal = async (req, res) => {
+    const { id } = req.params;
+    const { nombre, apellido, dni, tipo, email } = req.body;
+    if (!nombre || !apellido || !dni || !tipo) return res.status(400).json({ message: "Campos obligatorios" });
+    if (!NOMBRE_REGEX.test(String(nombre).trim()) || !NOMBRE_REGEX.test(String(apellido).trim())) {
+        return res.status(400).json({ message: "Nombre y apellido solo pueden contener letras (sin números ni símbolos)" });
+    }
+    if (!/^\d+$/.test(String(dni).trim())) return res.status(400).json({ message: "El DNI debe ser numérico (sin puntos ni letras)" });
+    try {
+        const pool = await getPool();
+        const { rowCount } = await pool.query(
+            'UPDATE personal SET nombre = $1, apellido = $2, dni = $3, tipo = $4, email = $5 WHERE id = $6',
+            [nombre, apellido, dni, tipo, email, id]
+        );
+        if (rowCount === 0) return res.status(404).json({ message: "Personal no encontrado" });
+        res.json({ message: "Legajo de personal actualizado correctamente" });
+    } catch (err) { manejarErrorPg(res, err); }
+};
+
+exports.deletePersonal = async (req, res) => {
+    const { id } = req.params;
+    try {
+        const pool = await getPool();
+        await pool.query('DELETE FROM personal WHERE id = $1', [id]);
+        res.json({ message: "Personal eliminado" });
+    } catch (err) { manejarErrorPg(res, err); }
+};
+
+// --- TARIFAS (tarifa_concepto) — reemplaza a la vieja "cuotas_config" ---
+exports.getTarifas = async (req, res) => {
+    try {
+        const pool = await getPool();
+        const { rows } = await pool.query(
+            `SELECT tc.*, d.nombre AS deporte_nombre, t.nombre AS transporte_nombre
+             FROM tarifa_concepto tc
+             LEFT JOIN deportes d ON d.id = tc.deporte_id
+             LEFT JOIN transportes t ON t.id = tc.transporte_id
+             ORDER BY tc.vigencia DESC, tc.tipo_servicio`
+        );
+        res.json(rows);
+    } catch (err) { manejarErrorPg(res, err); }
+};
+
+exports.createTarifa = async (req, res) => {
+    const { tipo_servicio, descripcion, monto, vigencia, deporte_id, transporte_id } = req.body;
+    const montoNum = parseFloat(monto);
+    if (!['cuota', 'deporte', 'transporte', 'comedor'].includes(tipo_servicio)) {
+        return res.status(400).json({ message: "tipo_servicio inválido" });
+    }
+    if (!vigencia || isNaN(montoNum) || montoNum <= 0) {
+        return res.status(400).json({ message: "El monto debe ser mayor a 0 y la vigencia es obligatoria" });
+    }
+    try {
+        const pool = await getPool();
+        const { rows } = await pool.query(
+            `INSERT INTO tarifa_concepto (tipo_servicio, descripcion, monto, vigencia, deporte_id, transporte_id)
+             VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+            [tipo_servicio, descripcion || null, montoNum, vigencia, deporte_id || null, transporte_id || null]
+        );
+        res.status(201).json({ id: rows[0].id });
+    } catch (err) { manejarErrorPg(res, err); }
+};
+
+exports.deleteTarifa = async (req, res) => {
+    const { id } = req.params;
+    try {
+        const pool = await getPool();
+        await pool.query('UPDATE tarifa_concepto SET activo = FALSE WHERE id = $1', [id]);
+        res.json({ message: "Tarifa desactivada" });
+    } catch (err) { manejarErrorPg(res, err); }
+};
+
+// --- FACTURAS (reemplaza a "pagos"/"deudores": una factura con saldo > 0 es,
+// justamente, una deuda). Admin ve todas (opcionalmente filtradas por
+// alumno_id); padre/alumno solo las propias. ---
+exports.getFacturas = async (req, res) => {
+    try {
+        const pool = await getPool();
+        // SQL estático y siempre parametrizado (nada de armar el WHERE
+        // concatenando strings): el rol/alumno_id/soloDeuda viajan como
+        // parámetros, nunca como texto dentro de la consulta.
+        const alumnoIdFiltro = req.user.rol === 'admin' && req.query.alumno_id
+            ? parseInt(req.query.alumno_id, 10)
+            : null;
+        const soloDeuda = req.query.soloDeuda === '1';
+
+        const { rows } = await pool.query(
+            `SELECT f.*, a.nombre AS alumno_nombre, a.apellido AS alumno_apellido, a.dni AS alumno_dni
+             FROM factura f
+             JOIN alumnos a ON a.id = f.alumno_id
+             WHERE (
+                 ($1 = 'padre' AND a.padre_id = $2)
+                 OR ($1 = 'alumno' AND a.usuario_id = $2)
+                 OR ($1 = 'admin' AND ($3::integer IS NULL OR a.id = $3))
+             )
+             AND ($4::boolean IS NOT TRUE OR f.saldo > 0)
+             ORDER BY f.periodo DESC, a.apellido, a.nombre`,
+            [req.user.rol, req.user.id, alumnoIdFiltro, soloDeuda]
+        );
+        res.json(rows);
+    } catch (err) { manejarErrorPg(res, err); }
+};
+
+exports.getFacturaDetalle = async (req, res) => {
+    const facturaId = parseInt(req.params.id);
+    if (!facturaId) return res.status(400).json({ message: 'Factura inválida' });
+    try {
+        const pool = await getPool();
+        const { rows } = await pool.query(
+            `SELECT fd.*, tc.tipo_servicio
+             FROM factura_detalle fd
+             JOIN tarifa_concepto tc ON tc.id = fd.tarifa_concepto_id
+             WHERE fd.factura_id = $1
+             ORDER BY fd.id`,
+            [facturaId]
+        );
+        res.json(rows);
+    } catch (err) { manejarErrorPg(res, err); }
 };
 
 exports.getSaldoAlumno = async (req, res) => {
@@ -327,46 +300,112 @@ exports.getSaldoAlumno = async (req, res) => {
 
     try {
         const pool = await getPool();
-        const { recordset } = await pool.request()
-            .input('alumno', sql.Int, alumno_id)
-            .query('SELECT alumno_id, saldo_pendiente, ultima_actualizacion FROM dbo.Saldos WHERE alumno_id = @alumno');
-        res.json(recordset[0] || { alumno_id, saldo_pendiente: 0 });
+        const { rows } = await pool.query(
+            'SELECT alumno_id, saldo_pendiente, ultima_actualizacion FROM saldos WHERE alumno_id = $1',
+            [alumno_id]
+        );
+        res.json(rows[0] || { alumno_id, saldo_pendiente: 0 });
     } catch (err) {
-        manejarErrorMssql(res, err);
+        manejarErrorPg(res, err);
     }
 };
 
-// Lista de pagos registrados. Admin ve todos; un padre solo los de sus hijos.
-exports.getPagos = (req, res) => {
-    let query = `
-        SELECT p.id, p.monto_pagado, p.fecha_pago, p.metodo_pago,
-               a.nombre AS alumno_nombre, a.apellido AS alumno_apellido, a.dni AS alumno_dni
-        FROM pagos p
-        LEFT JOIN alumnos a ON p.alumno_id = a.id
-    `;
-    const params = [];
-    if (req.user.rol === 'padre') {
-        query += ` WHERE a.tutor_id = ?`;
-        params.push(req.user.id);
-    }
-    query += ` ORDER BY p.fecha_pago DESC`;
-    db.all(query, params, (err, rows) => {
-        if (err) return manejarErrorSQL(res, err);
+// --- BANDEJA DE VERIFICACIÓN DE COMPROBANTES ---
+// Admin ve todos (opcionalmente filtrados por ?estado=Pendiente|Aprobado|Rechazado);
+// padre/alumno ven solo los propios (reemplaza al viejo listado de "pagos").
+const ESTADOS_COMPROBANTE = ['Pendiente', 'Aprobado', 'Rechazado'];
+
+exports.getComprobantes = async (req, res) => {
+    try {
+        const pool = await getPool();
+        // Mismo criterio que getFacturas: SQL estático, filtros por parámetro.
+        const estadoFiltro = ESTADOS_COMPROBANTE.includes(req.query.estado) ? req.query.estado : null;
+
+        const { rows } = await pool.query(
+            `SELECT ct.id, ct.factura_id, ct.nombre_archivo, ct.tipo_mime, ct.monto,
+                    ct.fecha_transferencia, ct.estado_verificacion, ct.observaciones, ct.fecha_carga,
+                    f.periodo, a.nombre AS alumno_nombre, a.apellido AS alumno_apellido, a.dni AS alumno_dni
+             FROM comprobante_transferencia ct
+             JOIN factura f ON f.id = ct.factura_id
+             JOIN alumnos a ON a.id = f.alumno_id
+             WHERE (
+                 ($1 = 'padre' AND a.padre_id = $2)
+                 OR ($1 = 'alumno' AND a.usuario_id = $2)
+                 OR $1 = 'admin'
+             )
+             AND ($3::varchar IS NULL OR ct.estado_verificacion = $3)
+             ORDER BY ct.fecha_carga DESC`,
+            [req.user.rol, req.user.id, estadoFiltro]
+        );
         res.json(rows);
-    });
+    } catch (err) { manejarErrorPg(res, err); }
 };
 
-exports.getDeudores = (req, res) => {
-    const query = `
-        SELECT a.id, a.nombre, a.apellido, a.dni,
-               COALESCE(s.saldo_pendiente, 0) as saldo_pendiente
-        FROM alumnos a
-        LEFT JOIN saldos_alumnos s ON s.alumno_id = a.id
-        WHERE COALESCE(s.saldo_pendiente, 0) > 0
-        ORDER BY s.saldo_pendiente DESC
-    `;
-    db.all(query, [], (err, rows) => {
-        if (err) return manejarErrorSQL(res, err);
-        res.json(rows);
-    });
+// Aprueba el comprobante: descuenta el monto de la factura y de saldos.
+exports.aprobarComprobante = async (req, res) => {
+    const id = parseInt(req.params.id);
+    if (!id) return res.status(400).json({ message: 'Comprobante inválido' });
+
+    const pool = await getPool();
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+
+        const { rows: comprobanteRows } = await client.query(
+            `UPDATE comprobante_transferencia SET estado_verificacion = 'Aprobado', observaciones = $1
+             WHERE id = $2 AND estado_verificacion = 'Pendiente'
+             RETURNING factura_id, monto`,
+            [req.body.observaciones || null, id]
+        );
+        if (!comprobanteRows[0]) {
+            await client.query('ROLLBACK');
+            return res.status(409).json({ message: 'El comprobante ya fue verificado o no existe' });
+        }
+        const { factura_id, monto } = comprobanteRows[0];
+
+        const { rows: facturaRows } = await client.query(
+            `UPDATE factura SET
+                saldo = GREATEST(saldo - $1, 0),
+                estado = CASE
+                    WHEN saldo - $1 <= 0 THEN 'Pagada'
+                    WHEN saldo - $1 < total THEN 'Pago parcial'
+                    ELSE estado
+                END
+             WHERE id = $2
+             RETURNING alumno_id, saldo`,
+            [monto, factura_id]
+        );
+        const { alumno_id, saldo } = facturaRows[0];
+
+        await client.query(
+            `INSERT INTO saldos (alumno_id, saldo_pendiente, ultima_actualizacion)
+             VALUES ($1, $2, now())
+             ON CONFLICT (alumno_id) DO UPDATE SET saldo_pendiente = $2, ultima_actualizacion = now()`,
+            [alumno_id, saldo]
+        );
+
+        await client.query('COMMIT');
+        res.json({ message: 'Comprobante aprobado: factura y saldo actualizados' });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        manejarErrorPg(res, err);
+    } finally {
+        client.release();
+    }
+};
+
+exports.rechazarComprobante = async (req, res) => {
+    const id = parseInt(req.params.id);
+    if (!id) return res.status(400).json({ message: 'Comprobante inválido' });
+    try {
+        const pool = await getPool();
+        const { rows } = await pool.query(
+            `UPDATE comprobante_transferencia SET estado_verificacion = 'Rechazado', observaciones = $1
+             WHERE id = $2 AND estado_verificacion = 'Pendiente'
+             RETURNING id`,
+            [req.body.observaciones || null, id]
+        );
+        if (!rows[0]) return res.status(409).json({ message: 'El comprobante ya fue verificado o no existe' });
+        res.json({ message: 'Comprobante rechazado' });
+    } catch (err) { manejarErrorPg(res, err); }
 };

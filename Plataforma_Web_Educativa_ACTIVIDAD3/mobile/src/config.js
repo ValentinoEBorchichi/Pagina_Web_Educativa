@@ -1,6 +1,9 @@
-// En Expo Go sobre un celular físico, usar la IPv4 de la PC conectada a la misma WiFi.
-// Esta IP puede cambiar si el router asigna otra dirección.
-export const API_URL = 'http://10.13.25.198:3000';
+// URL pública del backend en Render, inyectada en build time vía
+// EXPO_PUBLIC_API_URL (ver mobile/.env.example). Sin esa variable, cae a una
+// IP de LAN -solo sirve para desarrollo local con Expo Go en la misma WiFi
+// que la PC donde corre el backend; esa IP puede cambiar si el router asigna
+// otra dirección-.
+export const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://10.13.25.198:3000';
 
 const API_PATHS = new Set([
   '/api/auth/login',

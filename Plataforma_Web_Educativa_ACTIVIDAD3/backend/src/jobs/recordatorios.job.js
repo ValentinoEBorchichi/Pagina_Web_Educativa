@@ -1,5 +1,5 @@
 const cron = require('node-cron');
-const { sql, getPool } = require('../config/db');
+const { getPool } = require('../config/db');
 const { enviarRecordatorioDeuda } = require('../services/email.service');
 
 const CRON_EXPRESION = '0 9 20 * *';
@@ -15,25 +15,24 @@ function periodoActual() {
 
 async function obtenerDeudas() {
     const pool = await getPool();
-    const { recordset } = await pool.request()
-        .input('periodoActual', sql.Date, periodoActual())
-        .query(`
-            SELECT u.email,
-                   CONCAT(u.nombre, ' ', u.apellido) AS nombre_padre,
-                   f.id AS factura_id,
-                   CONCAT(a.apellido, ', ', a.nombre) AS alumno,
-                   f.periodo,
-                   f.estado,
-                   CASE WHEN f.saldo > 0 THEN f.saldo ELSE f.total END AS saldo
-            FROM dbo.Factura f
-            INNER JOIN dbo.Alumnos a ON a.id = f.alumno_id
-            INNER JOIN dbo.Usuarios u ON u.id = a.padre_id
-            WHERE f.estado IN ('Pendiente', 'Vencida')
-              AND f.periodo < @periodoActual
-              AND u.email IS NOT NULL
-            ORDER BY u.email, f.periodo;
-        `);
-    return recordset;
+    const { rows } = await pool.query(
+        `SELECT u.email,
+                CONCAT(u.nombre, ' ', u.apellido) AS nombre_padre,
+                f.id AS factura_id,
+                CONCAT(a.apellido, ', ', a.nombre) AS alumno,
+                f.periodo,
+                f.estado,
+                CASE WHEN f.saldo > 0 THEN f.saldo ELSE f.total END AS saldo
+         FROM factura f
+         INNER JOIN alumnos a ON a.id = f.alumno_id
+         INNER JOIN usuarios u ON u.id = a.padre_id
+         WHERE f.estado IN ('Pendiente', 'Vencida')
+           AND f.periodo < $1
+           AND u.email IS NOT NULL
+         ORDER BY u.email, f.periodo`,
+        [periodoActual()]
+    );
+    return rows;
 }
 
 async function enviarRecordatorios() {

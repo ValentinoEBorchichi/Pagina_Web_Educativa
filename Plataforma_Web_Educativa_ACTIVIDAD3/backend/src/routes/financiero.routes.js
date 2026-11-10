@@ -4,22 +4,24 @@ const financieroController = require('../controllers/financiero.controller');
 const { requireAuth } = require('../config/auth');
 const { recibirComprobante } = require('../middleware/uploadComprobante');
 
-// Rutas protegidas
+// Personal (legajo no docente, no es financiero pero vive en esta ruta por
+// compatibilidad con el frontend ya existente).
 router.get('/personal', requireAuth(['admin']), financieroController.getPersonal);
 router.post('/personal', requireAuth(['admin']), financieroController.createPersonal);
 router.put('/personal/:id', requireAuth(['admin']), financieroController.updatePersonal);
 router.delete('/personal/:id', requireAuth(['admin']), financieroController.deletePersonal);
 
-router.get('/cuotas-config', requireAuth(['admin']), financieroController.getCuotasConfig);
-router.post('/cuotas-config', requireAuth(['admin']), financieroController.createCuotaConfig);
-router.delete('/cuotas-config/:id', requireAuth(['admin']), financieroController.deleteCuotaConfig);
+// Tarifas (tarifa_concepto) — reemplaza a la vieja "cuotas-config".
+router.get('/tarifas', requireAuth(['admin', 'padre']), financieroController.getTarifas);
+router.post('/tarifas', requireAuth(['admin']), financieroController.createTarifa);
+router.delete('/tarifas/:id', requireAuth(['admin']), financieroController.deleteTarifa);
 
-router.post('/pagos', requireAuth(['admin']), financieroController.registrarPago);
-router.get('/pagos', requireAuth(['admin', 'padre']), financieroController.getPagos);
-router.get('/comprobante/:pago_id', requireAuth(['admin', 'padre']), financieroController.generarComprobante);
+// Facturas — reemplaza a "pagos"/"deudores" (una factura con saldo > 0 es una deuda).
+router.get('/facturas', requireAuth(['admin', 'padre', 'alumno']), financieroController.getFacturas);
+router.get('/facturas/:id/detalle', requireAuth(['admin', 'padre', 'alumno']), financieroController.getFacturaDetalle);
 router.get('/saldo/:alumno_id', requireAuth(['admin', 'padre']), financieroController.getSaldoAlumno);
-router.get('/deudores', requireAuth(['admin']), financieroController.getDeudores);
 
+// Comprobantes de transferencia: carga + bandeja de verificación del admin.
 // El archivo se recibe como multipart/form-data en el campo "archivo".
 router.post(
     '/comprobantes',
@@ -27,5 +29,9 @@ router.post(
     recibirComprobante,
     financieroController.subirComprobante
 );
+router.get('/comprobantes', requireAuth(['admin', 'padre', 'alumno']), financieroController.getComprobantes);
+router.get('/comprobantes/:id/archivo', requireAuth(['admin', 'padre', 'alumno']), financieroController.descargarComprobanteArchivo);
+router.post('/comprobantes/:id/aprobar', requireAuth(['admin']), financieroController.aprobarComprobante);
+router.post('/comprobantes/:id/rechazar', requireAuth(['admin']), financieroController.rechazarComprobante);
 
 module.exports = router;
