@@ -1,6 +1,6 @@
 // En Expo Go sobre un celular físico, usar la IPv4 de la PC conectada a la misma WiFi.
 // Esta IP puede cambiar si el router asigna otra dirección.
-export const API_URL = 'http://192.168.1.77:3000';
+export const API_URL = 'http://10.13.25.198:3000';
 
 const API_PATHS = new Set([
   '/api/auth/login',
