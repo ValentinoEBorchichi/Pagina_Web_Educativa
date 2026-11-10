@@ -27,17 +27,12 @@ if (!process.env.DATABASE_URL) {
 }
 
 // Supabase exige TLS con un certificado de una CA pública válida: se valida
-// normalmente (rejectUnauthorized: true, el default de Node). Si alguna vez
-// hiciera falta saltarla (p. ej. un proxy/VPN corporativo con su propio
-// certificado), activarlo a propósito con DATABASE_SSL_INSECURE=true en el
-// .env -nunca como default-, nunca disponible por accidente en producción.
-const ssl = process.env.DATABASE_SSL_INSECURE === 'true'
-    ? { rejectUnauthorized: false }
-    : true;
-
+// siempre (ssl: true -> rejectUnauthorized: true, el default de Node). No
+// hay ningún flag para desactivarla: si algún entorno rarísimo lo necesitara,
+// se parchea a mano ahí, nunca como opción disponible en el repo.
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
-    ssl,
+    ssl: true,
     max: 10,
     idleTimeoutMillis: 30000
 });

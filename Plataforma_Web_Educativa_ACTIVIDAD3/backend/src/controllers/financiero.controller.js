@@ -23,6 +23,15 @@ function sanitizarNombreArchivo(nombre) {
     return limpio || 'comprobante';
 }
 
+// tipo_mime también viene del archivo que subió el usuario (ver
+// uploadComprobante.js): aunque ya se valida al subirlo, se revalida acá
+// contra la misma lista blanca antes de usarlo para armar la respuesta, en
+// vez de confiar en lo que haya quedado guardado en la base.
+const TIPOS_MIME_PERMITIDOS = new Set(['image/jpeg', 'image/png', 'application/pdf']);
+function tipoMimeSeguro(tipoMime) {
+    return TIPOS_MIME_PERMITIDOS.has(tipoMime) ? tipoMime : 'application/octet-stream';
+}
+
 // Recibe el comprobante, calcula SHA-256, evita duplicados y lo registra.
 exports.subirComprobante = async (req, res) => {
     const facturaId = Number.parseInt(req.body.factura_id, 10);
@@ -126,8 +135,14 @@ exports.descargarComprobanteArchivo = async (req, res) => {
         if (!tieneAcceso) return res.status(403).json({ message: 'No tiene acceso a este comprobante' });
 
         const buffer = await descargarArchivo(BUCKET_COMPROBANTES, comprobante.ruta_archivo);
-        res.setHeader('Content-Type', comprobante.tipo_mime || 'application/octet-stream');
-        res.setHeader('Content-Disposition', `inline; filename="${sanitizarNombreArchivo(comprobante.nombre_archivo)}"`);
+        // Nunca "inline": un archivo subido por el usuario no se renderiza
+        // dentro del origen de la app (ni el navegador debe "adivinar" el
+        // tipo), para no abrir la puerta a un PDF/imagen con contenido
+        // manipulado. El frontend ya lo abre vía blob descargado por fetch,
+        // así que forzar la descarga acá no cambia esa experiencia.
+        res.setHeader('Content-Type', tipoMimeSeguro(comprobante.tipo_mime));
+        res.setHeader('Content-Disposition', `attachment; filename="${sanitizarNombreArchivo(comprobante.nombre_archivo)}"`);
+        res.setHeader('X-Content-Type-Options', 'nosniff');
         res.send(buffer);
     } catch (err) {
         manejarErrorPg(res, err);
