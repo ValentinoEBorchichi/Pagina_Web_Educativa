@@ -818,14 +818,9 @@ const AdminDashboard = () => {
     const verComprobante = async (comprobanteId) => {
         try {
             const response = await apiFetch(`${API_URL}/api/financiero/comprobantes/${comprobanteId}/archivo`);
-            if (!response.ok) {
-                const errorBody = await response.json().catch(() => ({}));
-                return alert(errorBody.message || 'No se pudo abrir el comprobante');
-            }
-            const blob = await response.blob();
-            const url = URL.createObjectURL(blob);
-            window.open(url, '_blank');
-            setTimeout(() => URL.revokeObjectURL(url), 60000);
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) return alert(data.message || 'No se pudo abrir el comprobante');
+            window.open(data.url, '_blank');
         } catch (error) { console.error(error); alert('Error al abrir el comprobante'); }
     };
 

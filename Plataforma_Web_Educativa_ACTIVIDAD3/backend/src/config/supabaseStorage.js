@@ -31,6 +31,15 @@ async function descargarArchivo(bucket, ruta) {
     return Buffer.from(await data.arrayBuffer());
 }
 
+// URL temporaria para que el cliente descargue el archivo directo de Supabase
+// Storage (el bucket es privado): el backend nunca vuelve a leer los bytes
+// del archivo ni a escribirlos en su propia respuesta.
+async function obtenerUrlFirmada(bucket, ruta, segundos = 60) {
+    const { data, error } = await supabase.storage.from(bucket).createSignedUrl(ruta, segundos);
+    if (error) throw error;
+    return data.signedUrl;
+}
+
 async function eliminarArchivo(bucket, ruta) {
     const { error } = await supabase.storage.from(bucket).remove([ruta]);
     if (error) console.error(`No se pudo borrar ${bucket}/${ruta}:`, error.message);
@@ -42,5 +51,6 @@ module.exports = {
     BUCKET_FACTURAS,
     subirArchivo,
     descargarArchivo,
+    obtenerUrlFirmada,
     eliminarArchivo
 };

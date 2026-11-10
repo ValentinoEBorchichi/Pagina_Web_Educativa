@@ -2,7 +2,7 @@ const { getPool } = require('../config/db');
 const { NOMBRE_REGEX } = require('../utils/validators');
 const { manejarErrorPg } = require('../utils/dbErrors');
 const { calcularHash, guardarComprobante, eliminarComprobante } = require('../services/comprobanteStorage');
-const { descargarArchivo, BUCKET_COMPROBANTES } = require('../config/supabaseStorage');
+const { obtenerUrlFirmada, BUCKET_COMPROBANTES } = require('../config/supabaseStorage');
 
 // Módulo financiero: SOLO el sistema de facturación/comprobantes (antes en
 // SQL Server). El sistema viejo de SQLite (cuotas_config/pagos/saldos_alumnos,
@@ -111,7 +111,9 @@ exports.subirComprobante = async (req, res) => {
     }
 };
 
-// Descarga el archivo subido (Supabase Storage). Admin puede ver cualquiera;
+// Da acceso al archivo subido (Supabase Storage) SIN que el backend lea ni
+// escriba esos bytes: devuelve una URL firmada de corta duración y el
+// cliente descarga directo de Supabase. Admin puede ver cualquiera;
 // padre/alumno solo los de su propia factura.
 exports.descargarComprobanteArchivo = async (req, res) => {
     const id = parseInt(req.params.id);
@@ -134,16 +136,12 @@ exports.descargarComprobanteArchivo = async (req, res) => {
             || (req.user.rol === 'alumno' && comprobante.usuario_id === req.user.id);
         if (!tieneAcceso) return res.status(403).json({ message: 'No tiene acceso a este comprobante' });
 
-        const buffer = await descargarArchivo(BUCKET_COMPROBANTES, comprobante.ruta_archivo);
-        // Nunca "inline": un archivo subido por el usuario no se renderiza
-        // dentro del origen de la app (ni el navegador debe "adivinar" el
-        // tipo), para no abrir la puerta a un PDF/imagen con contenido
-        // manipulado. El frontend ya lo abre vía blob descargado por fetch,
-        // así que forzar la descarga acá no cambia esa experiencia.
-        res.setHeader('Content-Type', tipoMimeSeguro(comprobante.tipo_mime));
-        res.setHeader('Content-Disposition', `attachment; filename="${sanitizarNombreArchivo(comprobante.nombre_archivo)}"`);
-        res.setHeader('X-Content-Type-Options', 'nosniff');
-        res.send(buffer);
+        const url = await obtenerUrlFirmada(BUCKET_COMPROBANTES, comprobante.ruta_archivo, 60);
+        res.json({
+            url,
+            nombre_archivo: sanitizarNombreArchivo(comprobante.nombre_archivo),
+            tipo_mime: tipoMimeSeguro(comprobante.tipo_mime)
+        });
     } catch (err) {
         manejarErrorPg(res, err);
     }
