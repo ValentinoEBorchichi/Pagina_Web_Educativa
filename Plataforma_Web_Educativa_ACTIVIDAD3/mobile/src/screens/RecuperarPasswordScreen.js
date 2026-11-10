@@ -1,6 +1,8 @@
 import { useState } from 'react';
-import { ActivityIndicator, Button, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, ImageBackground, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { apiUrl, SIMULAR_RECUPERACION } from '../config';
+
+const FONDO_EDUCATIVO = 'https://images.unsplash.com/photo-1503454537195-1dcabb73ffb9?w=900&q=80';
 
 // HU2: el padre ingresa su DNI y el backend le envía por correo el token de recuperación.
 
@@ -71,7 +73,10 @@ export default function RecuperarPasswordScreen() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.label}>Ingresá el DNI del alumno asociado a tu cuenta</Text>
+      <ImageBackground source={{ uri: FONDO_EDUCATIVO }} style={styles.encabezado} imageStyle={styles.encabezadoImagen}><View style={styles.encabezadoCapa}><Text style={styles.encabezadoTitulo}>Recuperar contraseña</Text><Text style={styles.encabezadoSubtitulo}>Te ayudamos a recuperar el acceso</Text></View></ImageBackground>
+      <View style={styles.tarjeta}>
+      <Text style={styles.descripcion}>Ingresá el DNI del alumno asociado a tu cuenta para recibir las instrucciones.</Text>
+      <Text style={styles.label}>DNI del alumno</Text>
       <TextInput
         style={styles.input}
         value={dni}
@@ -90,15 +95,16 @@ export default function RecuperarPasswordScreen() {
       </> : null}
       {error ? <Text style={styles.error}>{error}</Text> : null}
       {mensaje ? <Text style={styles.ok}>{mensaje}</Text> : null}
-      {cargando ? <ActivityIndicator /> : <Button title={codigoEnviado ? 'Cambiar contraseña' : 'Enviar código'} onPress={codigoEnviado ? restablecer : enviar} />}
+      {cargando ? <ActivityIndicator color="#1a5fa8" /> : <Pressable style={styles.boton} onPress={codigoEnviado ? restablecer : enviar}><Text style={styles.botonTexto}>{codigoEnviado ? 'CAMBIAR CONTRASEÑA' : 'ENVIAR CÓDIGO'}</Text></Pressable>}
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16, gap: 12 },
-  label: { fontSize: 16 },
-  input: { borderWidth: 1, borderColor: '#ccc', borderRadius: 6, padding: 10, fontSize: 16 },
-  error: { color: '#b91c1c' },
-  ok: { color: '#166534' },
+  container: { flex: 1, padding: 16, gap: 14, backgroundColor: '#f8fafc' },
+  encabezado: { height: 145, borderRadius: 18, overflow: 'hidden' }, encabezadoImagen: { borderRadius: 18 }, encabezadoCapa: { flex: 1, justifyContent: 'flex-end', padding: 18, backgroundColor: 'rgba(46,157,104,0.8)' }, encabezadoTitulo: { color: '#fff', fontSize: 23, fontWeight: '800' }, encabezadoSubtitulo: { color: '#dcfce7', marginTop: 5 },
+  tarjeta: { backgroundColor: '#fff', padding: 20, borderRadius: 16, gap: 12, shadowColor: '#0f172a', shadowOpacity: 0.08, shadowRadius: 10, elevation: 3 }, descripcion: { color: '#64748b', lineHeight: 20 }, label: { color: '#154e8a', fontSize: 14, fontWeight: '700' },
+  input: { borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 10, padding: 13, fontSize: 16, color: '#0f172a', backgroundColor: '#f8fafc' },
+  boton: { minHeight: 48, borderRadius: 10, backgroundColor: '#1a5fa8', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12 }, botonTexto: { color: '#fff', fontWeight: '800', fontSize: 13 }, error: { color: '#b91c1c', backgroundColor: '#fef2f2', padding: 10, borderRadius: 8 }, ok: { color: '#166534', backgroundColor: '#dcfce7', padding: 10, borderRadius: 8 },
 });

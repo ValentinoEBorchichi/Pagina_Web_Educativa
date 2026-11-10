@@ -1,11 +1,19 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, SectionList, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, ImageBackground, Pressable, SectionList, StyleSheet, Text, View } from 'react-native';
 import { apiUrl } from '../config';
 
 // HU4: deportes (máximo 2, RF-06) y transporte (RF-09) vigentes del alumno.
 // Parámetros de navegación: { alumnoId }.
 
 const MAX_DEPORTES = 2;
+const FONDO_EDUCATIVO = 'https://images.unsplash.com/photo-1503454537195-1dcabb73ffb9?w=900&q=80';
+
+const TEMAS_HIJOS = [
+  { fondo: '#1a5fa8', fondoActivo: '#dbeafe', textoActivo: '#154e8a' },
+  { fondo: '#2e9d68', fondoActivo: '#dcfce7', textoActivo: '#17603d' },
+  { fondo: '#7652a8', fondoActivo: '#f3e8ff', textoActivo: '#5b2f88' },
+  { fondo: '#f5820d', fondoActivo: '#ffedd5', textoActivo: '#a44905' },
+];
 
 const COLORS = {
   primary: '#1a5fa8',
@@ -19,18 +27,18 @@ const COLORS = {
   danger: '#b91c1c',
 };
 
-function Accion({ title, onPress, secondary = false }) {
+function Accion({ title, onPress, secondary = false, danger = false }) {
   return (
     <Pressable
       accessibilityRole="button"
       onPress={onPress}
       style={({ pressed }) => [
         styles.accion,
-        secondary ? styles.accionSecundaria : styles.accionPrimaria,
+        secondary ? (danger ? styles.accionPeligro : styles.accionSecundaria) : styles.accionPrimaria,
         pressed && styles.presionado,
       ]}
     >
-      <Text style={secondary ? styles.textoAccionSecundaria : styles.textoAccion}>{title}</Text>
+      <Text style={secondary ? (danger ? styles.textoAccionPeligro : styles.textoAccionSecundaria) : styles.textoAccion}>{title}</Text>
     </Pressable>
   );
 }
@@ -93,6 +101,8 @@ export default function ServiciosAlumnoScreen({ route, navigation, token: tokenP
   }
 
   const { alumno, deportes = [], transporte } = datos;
+  const indiceAlumno = Math.max(0, (datos.alumnos || []).findIndex((item) => item.alumno.id === alumnoId));
+  const temaAlumno = TEMAS_HIJOS[indiceAlumno % TEMAS_HIJOS.length];
   const secciones = [
     {
       titulo: `Deportes (${deportes.length}/${MAX_DEPORTES})`,
@@ -124,23 +134,29 @@ export default function ServiciosAlumnoScreen({ route, navigation, token: tokenP
       contentContainerStyle={styles.contenido}
       sections={secciones}
       ListHeaderComponent={alumno ? <View>
-        <View style={styles.resumen}>
-          <Text style={styles.periodo}>Servicios de {new Date().toLocaleDateString('es-AR', { month: 'long', year: 'numeric' })}</Text>
-          <Text style={styles.alumno}>{alumno.nombre} {alumno.apellido}</Text>
-        </View>
+        <ImageBackground source={{ uri: FONDO_EDUCATIVO }} style={styles.resumen} imageStyle={styles.resumenImagen}>
+          <View style={[styles.resumenCapa, { backgroundColor: temaAlumno.fondo + 'B3' }]}>
+            <Text style={styles.periodo}>Servicios de {new Date().toLocaleDateString('es-AR', { month: 'long', year: 'numeric' })}</Text>
+            <Text style={styles.alumno}>{alumno.nombre} {alumno.apellido}</Text>
+          </View>
+        </ImageBackground>
         {(datos.alumnos || []).length > 1 ? <View style={styles.hijos}>
           <Text style={styles.etiqueta}>Seleccioná un alumno</Text>
-          {(datos.alumnos || []).map((hijo) => <Pressable key={hijo.alumno.id} onPress={() => {
+          {(datos.alumnos || []).map((hijo, indice) => {
+            const temaHijo = TEMAS_HIJOS[indice % TEMAS_HIJOS.length];
+            const seleccionado = hijo.alumno.id === alumnoId;
+            return <Pressable key={hijo.alumno.id} onPress={() => {
           setAlumnoId(hijo.alumno.id);
           setDatos({ ...hijo, deportes: (hijo.deportes || []).slice(0, MAX_DEPORTES), alumnos: datos.alumnos });
-          }} style={({ pressed }) => [styles.hijo, hijo.alumno.id === alumnoId && styles.hijoActivo, pressed && styles.presionado]}>
-            <Text style={[styles.textoHijo, hijo.alumno.id === alumnoId && styles.textoHijoActivo]}>{hijo.alumno.id === alumnoId ? '✓ ' : ''}{hijo.alumno.nombre} {hijo.alumno.apellido}</Text>
-          </Pressable>)}
+          }} style={({ pressed }) => [styles.hijo, seleccionado && { backgroundColor: temaHijo.fondoActivo, borderLeftColor: temaHijo.fondo }, pressed && styles.presionado]}>
+            <Text style={[styles.textoHijo, seleccionado && { color: temaHijo.textoActivo }]}>{seleccionado ? '✓ ' : ''}{hijo.alumno.nombre} {hijo.alumno.apellido}</Text>
+          </Pressable>;
+          })}
         </View> : null}
         <View style={styles.acciones}>
           <Accion title="Ver cuotas e historial" onPress={() => navigation.navigate('Cuenta', { alumnoId, token })} />
           <Accion title="Cambiar contraseña" secondary onPress={() => navigation.navigate('CambiarPassword', { token })} />
-          {onLogout ? <Accion title="Cerrar sesión" secondary onPress={onLogout} /> : null}
+          {onLogout ? <Accion title="Cerrar sesión" secondary danger onPress={onLogout} /> : null}
         </View>
       </View> : null}
       renderSectionHeader={({ section }) => <View style={styles.seccionFila}><Text style={styles.seccion}>{section.titulo}</Text></View>}
@@ -161,7 +177,9 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
   contenido: { padding: 16, paddingBottom: 32 },
   centro: { flex: 1 },
-  resumen: { backgroundColor: COLORS.primary, borderRadius: 18, padding: 20, marginBottom: 16 },
+  resumen: { height: 155, borderRadius: 18, overflow: 'hidden', marginBottom: 16 },
+  resumenImagen: { borderRadius: 18 },
+  resumenCapa: { flex: 1, justifyContent: 'flex-end', padding: 20 },
   periodo: { color: '#dbeafe', textTransform: 'capitalize', marginBottom: 8, fontSize: 14, fontWeight: '600' },
   alumno: { color: COLORS.surface, fontSize: 24, fontWeight: '800' },
   hijos: { backgroundColor: COLORS.surface, borderRadius: 16, padding: 12, borderWidth: 1, borderColor: COLORS.border, marginBottom: 16 },
@@ -173,9 +191,11 @@ const styles = StyleSheet.create({
   acciones: { gap: 10, marginBottom: 12 },
   accion: { minHeight: 48, borderRadius: 12, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16 },
   accionPrimaria: { backgroundColor: COLORS.primary },
-  accionSecundaria: { backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border },
+  accionSecundaria: { backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.primary },
+  accionPeligro: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#dc2626' },
   textoAccion: { color: COLORS.surface, fontWeight: '800', fontSize: 15 },
   textoAccionSecundaria: { color: COLORS.primaryDark, fontWeight: '800', fontSize: 15 },
+  textoAccionPeligro: { color: '#b91c1c', fontWeight: '800', fontSize: 15 },
   presionado: { opacity: 0.75 },
   seccionFila: { borderBottomWidth: 1, borderBottomColor: COLORS.border, marginTop: 12, marginBottom: 8, paddingBottom: 8 },
   seccion: { color: COLORS.text, fontSize: 18, fontWeight: '800' },

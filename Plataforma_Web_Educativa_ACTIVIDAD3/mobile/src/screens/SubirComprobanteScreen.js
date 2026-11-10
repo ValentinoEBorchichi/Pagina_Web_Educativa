@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ActivityIndicator, Button, Image, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Image, ImageBackground, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { apiUrl } from '../config';
 
@@ -45,7 +45,11 @@ export default function SubirComprobanteScreen({ route, navigation }) {
     datos.append('factura_id', String(factura.id));
     datos.append('monto', String(montoNormalizado));
     datos.append('fecha_transferencia', fecha);
-    datos.append('archivo', { uri: imagen.uri, name: `ticket.${extension}`, type: tipo });
+    // Expo puede devolver un objeto de asset que React Native no reconoce como
+    // parte multipart. Convertimos la URI local a Blob antes de agregarla.
+    const archivoLocal = await fetch(imagen.uri);
+    const blob = await archivoLocal.blob();
+    datos.append('archivo', blob, `ticket.${extension}`);
 
     setEnviando(true);
     setError('');
@@ -66,24 +70,17 @@ export default function SubirComprobanteScreen({ route, navigation }) {
   }
 
   return <View style={styles.container}>
-    <Text style={styles.titulo}>Factura {factura.id} · saldo ${Number(factura.saldo).toFixed(2)}</Text>
-    <Text>Monto transferido</Text>
-    <TextInput accessibilityLabel="Monto transferido" keyboardType="decimal-pad" value={monto} onChangeText={setMonto} style={styles.input} />
-    <Text>Fecha de transferencia (AAAA-MM-DD)</Text>
-    <TextInput accessibilityLabel="Fecha de transferencia" value={fecha} onChangeText={setFecha} style={styles.input} />
-    <Button title={imagen ? 'Cambiar imagen del ticket' : 'Elegir imagen del ticket'} onPress={elegirImagen} />
+    <ImageBackground source={{ uri: 'https://images.unsplash.com/photo-1497633762265-9d179a990aa6?w=900&q=80' }} style={styles.encabezado} imageStyle={styles.encabezadoImagen}><View style={styles.encabezadoCapa}><Text style={styles.encabezadoTitulo}>Subir comprobante</Text><Text style={styles.encabezadoSubtitulo}>Factura {factura.id} · saldo ${Number(factura.saldo).toFixed(2)}</Text></View></ImageBackground>
+    <View style={styles.tarjeta}><Text style={styles.label}>Monto transferido</Text><TextInput accessibilityLabel="Monto transferido" keyboardType="decimal-pad" value={monto} onChangeText={setMonto} style={styles.input} placeholderTextColor="#94a3b8" />
+    <Text style={styles.label}>Fecha de transferencia (AAAA-MM-DD)</Text><TextInput accessibilityLabel="Fecha de transferencia" value={fecha} onChangeText={setFecha} style={styles.input} placeholderTextColor="#94a3b8" />
+    <Pressable style={styles.botonSecundario} onPress={elegirImagen}><Text style={styles.botonSecundarioTexto}>{imagen ? 'CAMBIAR IMAGEN DEL TICKET' : 'ELEGIR IMAGEN DEL TICKET'}</Text></Pressable>
     {imagen ? <Image source={{ uri: imagen.uri }} style={styles.preview} resizeMode="contain" /> : null}
     {error ? <Text style={styles.error}>{error}</Text> : null}
-    {enviando ? <ActivityIndicator /> : <Button title="Enviar comprobante" onPress={enviar} />}
-    <Text style={styles.nota}>Se aceptan imágenes JPG o PNG de hasta 5 MB. La validación del pago queda pendiente.</Text>
+    {enviando ? <ActivityIndicator color="#1a5fa8" /> : <Pressable style={styles.boton} onPress={enviar}><Text style={styles.botonTexto}>ENVIAR COMPROBANTE</Text></Pressable>}
+    <Text style={styles.nota}>Se aceptan imágenes JPG o PNG de hasta 5 MB. La validación del pago queda pendiente.</Text></View>
   </View>;
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 18, gap: 14 },
-  titulo: { fontWeight: '700', fontSize: 17 },
-  input: { borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 6, padding: 10 },
-  preview: { width: '100%', height: 220 },
-  error: { color: '#b91c1c' },
-  nota: { color: '#64748b', fontSize: 13 },
+  container: { flex: 1, padding: 16, gap: 14, backgroundColor: '#f8fafc' }, encabezado: { height: 145, borderRadius: 18, overflow: 'hidden' }, encabezadoImagen: { borderRadius: 18 }, encabezadoCapa: { flex: 1, justifyContent: 'flex-end', padding: 18, backgroundColor: 'rgba(245,130,13,0.7)' }, encabezadoTitulo: { color: '#fff', fontSize: 23, fontWeight: '800' }, encabezadoSubtitulo: { color: '#ffedd5', marginTop: 5 }, tarjeta: { backgroundColor: '#fff', padding: 18, borderRadius: 16, gap: 12 }, label: { color: '#154e8a', fontWeight: '700' }, input: { borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 10, padding: 13, color: '#0f172a', backgroundColor: '#f8fafc' }, preview: { width: '100%', height: 220, borderRadius: 10 }, boton: { minHeight: 48, borderRadius: 10, backgroundColor: '#1a5fa8', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12 }, botonTexto: { color: '#fff', fontWeight: '800', fontSize: 13 }, botonSecundario: { minHeight: 48, borderRadius: 10, backgroundColor: '#fff7ed', borderWidth: 1, borderColor: '#f5820d', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12 }, botonSecundarioTexto: { color: '#a44905', fontWeight: '800', fontSize: 13 }, error: { color: '#b91c1c', backgroundColor: '#fef2f2', padding: 10, borderRadius: 8 }, nota: { color: '#64748b', fontSize: 13, lineHeight: 18 },
 });
