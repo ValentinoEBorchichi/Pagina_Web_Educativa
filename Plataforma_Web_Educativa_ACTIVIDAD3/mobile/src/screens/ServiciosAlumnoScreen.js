@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, SectionList, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, ImageBackground, Pressable, SectionList, StyleSheet, Text, View } from 'react-native';
 import { apiUrl } from '../config';
 
 // HU4: deportes (máximo 2, RF-06) y transporte (RF-09) vigentes del alumno.
 // Parámetros de navegación: { alumnoId }.
 
 const MAX_DEPORTES = 2;
+const FONDO_EDUCATIVO = 'https://images.unsplash.com/photo-1503454537195-1dcabb73ffb9?w=900&q=80';
 
 const TEMAS_HIJOS = [
   { fondo: '#1a5fa8', fondoActivo: '#dbeafe', textoActivo: '#154e8a' },
@@ -133,10 +134,12 @@ export default function ServiciosAlumnoScreen({ route, navigation, token: tokenP
       contentContainerStyle={styles.contenido}
       sections={secciones}
       ListHeaderComponent={alumno ? <View>
-        <View style={[styles.resumen, { backgroundColor: temaAlumno.fondo }]}>
-          <Text style={styles.periodo}>Servicios de {new Date().toLocaleDateString('es-AR', { month: 'long', year: 'numeric' })}</Text>
-          <Text style={styles.alumno}>{alumno.nombre} {alumno.apellido}</Text>
-        </View>
+        <ImageBackground source={{ uri: FONDO_EDUCATIVO }} style={styles.resumen} imageStyle={styles.resumenImagen}>
+          <View style={[styles.resumenCapa, { backgroundColor: temaAlumno.fondo + 'D9' }]}>
+            <Text style={styles.periodo}>Servicios de {new Date().toLocaleDateString('es-AR', { month: 'long', year: 'numeric' })}</Text>
+            <Text style={styles.alumno}>{alumno.nombre} {alumno.apellido}</Text>
+          </View>
+        </ImageBackground>
         {(datos.alumnos || []).length > 1 ? <View style={styles.hijos}>
           <Text style={styles.etiqueta}>Seleccioná un alumno</Text>
           {(datos.alumnos || []).map((hijo, indice) => {
@@ -174,7 +177,9 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
   contenido: { padding: 16, paddingBottom: 32 },
   centro: { flex: 1 },
-  resumen: { backgroundColor: COLORS.primary, borderRadius: 18, padding: 20, marginBottom: 16 },
+  resumen: { height: 155, borderRadius: 18, overflow: 'hidden', marginBottom: 16 },
+  resumenImagen: { borderRadius: 18 },
+  resumenCapa: { flex: 1, justifyContent: 'flex-end', padding: 20 },
   periodo: { color: '#dbeafe', textTransform: 'capitalize', marginBottom: 8, fontSize: 14, fontWeight: '600' },
   alumno: { color: COLORS.surface, fontSize: 24, fontWeight: '800' },
   hijos: { backgroundColor: COLORS.surface, borderRadius: 16, padding: 12, borderWidth: 1, borderColor: COLORS.border, marginBottom: 16 },
