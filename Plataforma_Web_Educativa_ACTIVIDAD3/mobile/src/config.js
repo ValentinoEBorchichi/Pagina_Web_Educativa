@@ -7,6 +7,7 @@ export const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://10.13.25.198:3
 
 const API_PATHS = new Set([
   '/api/auth/login',
+  '/api/auth/me',
   '/api/auth/password',
   '/api/auth/recuperar-password',
   '/api/auth/restablecer-password',
@@ -14,6 +15,7 @@ const API_PATHS = new Set([
   '/api/facturas',
   '/api/comprobantes',
   '/api/padres/mis-hijos',
+  '/api/academico/mis-hijos/resumen',
 ]);
 const ALUMNO_RECURSOS = new Set(['inscripciones', 'estado-cuenta']);
 
@@ -26,6 +28,10 @@ export function apiUrl(path, alumnoId) {
       const id = Number(alumnoId);
       if (!Number.isSafeInteger(id) || id <= 0) throw new Error('Alumno inválido');
       ruta = `${path}?alumno_id=${encodeURIComponent(String(id))}`;
+    } else if (path === '/api/academico/mis-hijos/resumen') {
+      const id = Number(alumnoId);
+      if (!Number.isSafeInteger(id) || id <= 0) throw new Error('Alumno inválido');
+      ruta = `/api/academico/mis-hijos/${encodeURIComponent(String(id))}/resumen`;
     } else {
       ruta = path;
     }

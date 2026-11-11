@@ -10,8 +10,8 @@ export const COLORS = {
   orange: '#f5820d',
   violet: '#7c3aed',
   violetLight: '#9d61f2',
-  text: '#1e293b',
-  textMuted: '#475569',
+  text: '#0f172a', // alto contraste (antes #1e293b, se oscureció a pedido)
+  textMuted: '#334155',
   textSoft: '#64748b',
   bg: '#f8fafc',
   white: '#ffffff',
@@ -21,6 +21,9 @@ export const COLORS = {
   dangerBorder: '#fecaca',
   successBg: '#dcfce7',
   successBorder: '#bbf7d0',
+  warning: '#ea580c',
+  warningBg: '#ffedd5',
+  warningBorder: '#fed7aa',
 };
 
 // Nombres de familia tal como los registra useFonts() en App.js (ver
@@ -33,6 +36,17 @@ export const FONTS = {
   bodyBold: 'Nunito_700Bold',
   bodyExtraBold: 'Nunito_800ExtraBold',
   bodyBlack: 'Nunito_900Black',
+};
+
+// Escala de tamaños (un poco más grande que el default de RN para que se lea
+// cómodo en mano, sin llegar a gigante).
+export const FONT_SIZE = {
+  xs: 12,
+  sm: 14,
+  md: 16, // tamaño base de texto de cuerpo
+  lg: 18,
+  xl: 22,
+  xxl: 26,
 };
 
 export const RADIUS = {
@@ -49,8 +63,8 @@ export const SHADOW = {
   sm: {
     shadowColor: '#000000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
+    shadowOpacity: 0.06,
+    shadowRadius: 5,
     elevation: 2,
   },
   md: {
@@ -65,4 +79,15 @@ export const SHADOW = {
 export const GRADIENT_BRAND = [COLORS.blue, COLORS.violet];
 export const GRADIENT_HEADER = [COLORS.blue, COLORS.blueLight];
 
-export default { COLORS, FONTS, RADIUS, SHADOW, GRADIENT_BRAND, GRADIENT_HEADER };
+// Estilos de texto reutilizables: todo título/subtítulo de sección va en
+// negrita por defecto (a pedido), así no queda a criterio de cada screen.
+export const TEXT = {
+  sectionTitle: { fontFamily: FONTS.bodyExtraBold, fontSize: FONT_SIZE.lg, color: COLORS.text },
+  cardTitle: { fontFamily: FONTS.bodyExtraBold, fontSize: FONT_SIZE.md, color: COLORS.text },
+  subtitle: { fontFamily: FONTS.bodyBold, fontSize: FONT_SIZE.sm, color: COLORS.textMuted },
+  label: { fontFamily: FONTS.bodyExtraBold, fontSize: FONT_SIZE.xs, color: COLORS.textSoft, textTransform: 'uppercase', letterSpacing: 0.4 },
+  body: { fontFamily: FONTS.body, fontSize: FONT_SIZE.md, color: COLORS.text },
+  bodyMuted: { fontFamily: FONTS.body, fontSize: FONT_SIZE.sm, color: COLORS.textSoft },
+};
+
+export default { COLORS, FONTS, FONT_SIZE, RADIUS, SHADOW, GRADIENT_BRAND, GRADIENT_HEADER, TEXT };
