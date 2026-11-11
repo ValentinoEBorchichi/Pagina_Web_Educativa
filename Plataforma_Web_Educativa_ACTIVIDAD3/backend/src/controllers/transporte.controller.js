@@ -30,13 +30,14 @@ exports.listar = async (req, res) => {
 
 const esIdValido = (valor) => Number.isInteger(valor) && valor > 0;
 
-// Devuelve el alumno sobre el que se inscribe, o responde el error y devuelve null.
-// - alumno: solo puede inscribirse a sí mismo (su cuenta está en alumnos.usuario_id).
-// - padre:  solo a sus hijos (RF-02).
-// - admin:  a cualquier alumno.
-async function resolverAlumno(pool, req, res) {
+// Devuelve el alumno sobre el que se opera, o responde el error y devuelve null.
+// - alumno: solo puede operar sobre sí mismo (su cuenta está en alumnos.usuario_id).
+// - padre:  solo sobre sus hijos (RF-02).
+// - admin:  sobre cualquier alumno.
+// `pedido` es el alumno_id que mandó el cliente (en el body al inscribir, en el
+// query al dar de baja); `baja` solo cambia el texto de los mensajes de error.
+async function resolverAlumno(pool, req, res, { pedido = req.body.alumno_id, baja = false } = {}) {
     const { id: usuarioId, rol } = req.user;
-    const pedido = req.body.alumno_id;
 
     if (rol === 'alumno') {
         const { rows } = await pool.query('SELECT id, nombre FROM alumnos WHERE usuario_id = $1', [usuarioId]);
@@ -46,7 +47,7 @@ async function resolverAlumno(pool, req, res) {
             return null;
         }
         if (pedido != null && pedido !== '' && Number(pedido) !== alumno.id) {
-            error(res, 403, 'SIN_PERMISO', 'Solo podés inscribirte a vos mismo');
+            error(res, 403, 'SIN_PERMISO', baja ? 'Solo podés darte de baja a vos mismo' : 'Solo podés inscribirte a vos mismo');
             return null;
         }
         return alumno;
@@ -64,7 +65,7 @@ async function resolverAlumno(pool, req, res) {
         return null;
     }
     if (rol === 'padre' && alumno.padre_id !== usuarioId) {
-        error(res, 403, 'SIN_PERMISO', 'Solo podés inscribir a tus hijos');
+        error(res, 403, 'SIN_PERMISO', baja ? 'Solo podés dar de baja a tus hijos' : 'Solo podés inscribir a tus hijos');
         return null;
     }
     return alumno;
@@ -118,6 +119,44 @@ exports.inscribir = async (req, res) => {
                 numero_recorrido: transporte.numero_recorrido,
                 recorrido: transporte.nombre
             }
+        });
+    } catch (err) {
+        manejarErrorPg(res, err);
+    }
+};
+
+// DELETE /api/transporte/desinscribir?alumno_id=
+// Da de baja al alumno del transporte escolar (alumnos.transporte_id = NULL).
+// - alumno: solo la suya (alumno_id es opcional; si viene, tiene que ser el suyo).
+// - padre:  solo la de sus hijos (alumno_id obligatorio).
+// - admin:  la de cualquier alumno (alumno_id obligatorio).
+// Es una baja, no un cambio de recorrido: para cambiar se vuelve a inscribir.
+exports.desinscribir = async (req, res) => {
+    try {
+        const pool = await getPool();
+
+        const alumno = await resolverAlumno(pool, req, res, { pedido: req.query.alumno_id, baja: true });
+        if (!alumno) return;
+
+        // El join con transportes (la fila que se está dejando) permite
+        // informar de qué recorrido se dio de baja; si el alumno no viajaba
+        // no matchea nada y no se toca nada.
+        const { rows } = await pool.query(
+            `UPDATE alumnos a
+             SET transporte_id = NULL
+             FROM transportes t
+             WHERE a.id = $1 AND a.transporte_id = t.id
+             RETURNING t.id AS transporte_id, t.numero_recorrido, t.nombre AS recorrido`,
+            [alumno.id]
+        );
+
+        if (!rows.length) {
+            return error(res, 404, 'SIN_TRANSPORTE', `${alumno.nombre} no está inscripto en ningún recorrido de transporte`);
+        }
+
+        res.json({
+            message: `Baja del transporte confirmada: ${alumno.nombre} ya no viaja en ${rows[0].recorrido}`,
+            baja: { alumno_id: alumno.id, ...rows[0] }
         });
     } catch (err) {
         manejarErrorPg(res, err);
