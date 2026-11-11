@@ -48,7 +48,13 @@ export default function SubirComprobanteScreen({ route, navigation }) {
     // Expo puede devolver un objeto de asset que React Native no reconoce como
     // parte multipart. Convertimos la URI local a Blob antes de agregarla.
     const archivoLocal = await fetch(imagen.uri);
-    const blob = await archivoLocal.blob();
+    const blobCrudo = await archivoLocal.blob();
+    // El blob que devuelve fetch() de una URI local suele llegar sin `type`
+    // (vacío), y entonces la parte multipart sale con
+    // Content-Type: application/octet-stream -el backend la rechaza aunque
+    // el nombre de archivo tenga la extensión correcta-. Se fuerza el tipo
+    // real acá, envolviendo los mismos bytes en un Blob nuevo.
+    const blob = blobCrudo.type === tipo ? blobCrudo : new Blob([blobCrudo], { type: tipo });
     datos.append('archivo', blob, `ticket.${extension}`);
 
     setEnviando(true);
