@@ -66,10 +66,12 @@ export default function MisHijosScreen() {
     setMensaje(null);
     setAccionando(idAlumno);
     try {
-      // encodeURIComponent() sobre el id ya validado, inline en el propio
-      // argumento del fetch: así el análisis estático ve el escape del valor
-      // justo antes de usarlo, no solo adentro de apiUrl() en otro archivo.
-      const res = await fetch(apiUrl('/api/academico/desvincular-hijo', { alumnoId: encodeURIComponent(String(idAlumno)) }), {
+      // URL resuelta en una constante propia (ruta fija de la whitelist de
+      // apiUrl() + id ya validado y escapado con encodeURIComponent), en vez
+      // de anidar la llamada a apiUrl() directo adentro del fetch().
+      const idSeguro = encodeURIComponent(String(idAlumno));
+      const destino = apiUrl('/api/academico/desvincular-hijo', { alumnoId: idSeguro });
+      const res = await fetch(destino, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
       });
