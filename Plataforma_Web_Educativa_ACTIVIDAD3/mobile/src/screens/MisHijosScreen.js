@@ -56,10 +56,17 @@ export default function MisHijosScreen() {
   }
 
   async function desvincular(alumnoId, nombreCompleto) {
+    // Se valida acá -además de adentro de apiUrl()- para que el alumno_id
+    // nunca llegue a fetch() como el parámetro recibido sin transformar.
+    const idAlumno = Number.isSafeInteger(alumnoId) && alumnoId > 0 ? alumnoId : null;
+    if (!idAlumno) {
+      setMensaje({ tipo: 'error', texto: 'Alumno inválido.' });
+      return;
+    }
     setMensaje(null);
-    setAccionando(alumnoId);
+    setAccionando(idAlumno);
     try {
-      const res = await fetch(apiUrl('/api/academico/desvincular-hijo', { alumnoId }), {
+      const res = await fetch(apiUrl('/api/academico/desvincular-hijo', { alumnoId: idAlumno }), {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
       });
