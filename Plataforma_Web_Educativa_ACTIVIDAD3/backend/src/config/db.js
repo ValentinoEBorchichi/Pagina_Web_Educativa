@@ -1,4 +1,6 @@
 const { Pool } = require('pg');
+const fs = require('fs');
+const path = require('path');
 require('dotenv').config();
 
 // Conexión a PostgreSQL (Supabase) con el driver "pg". Pool único compartido
@@ -26,13 +28,29 @@ if (!process.env.DATABASE_URL) {
     throw new Error('Falta DATABASE_URL en backend/.env (connection string de Supabase/Postgres)');
 }
 
-// Supabase exige TLS con un certificado de una CA pública válida: se valida
-// siempre (ssl: true -> rejectUnauthorized: true, el default de Node). No
-// hay ningún flag para desactivarla: si algún entorno rarísimo lo necesitara,
-// se parchea a mano ahí, nunca como opción disponible en el repo.
+// La verificación del certificado TLS queda siempre activa
+// (rejectUnauthorized no se toca, nunca en false): no hay ningún flag en el
+// repo para desactivarla.
+//
+// El pooler de Supabase (Connection/Transaction pooler) a veces no manda la
+// cadena completa, y Node tira "self-signed certificate in certificate
+// chain" porque no puede completarla con sus CA raíz por defecto. La forma
+// correcta de resolverlo es indicarle a Node la CA de Supabase (es un
+// certificado público, no un secreto):
+//   1) Dashboard de Supabase -> Project Settings -> Database ->
+//      SSL Configuration -> Download certificate.
+//   2) Guardarlo como backend/supabase/supabase-ca.crt (se puede commitear).
+// Si ese archivo no está, se sigue validando con las CA por defecto de Node
+// (puede fallar contra el pooler hasta que se agregue el certificado, pero
+// nunca se baja la guardia aceptando cualquier certificado).
+const CA_PATH = path.join(__dirname, '../../supabase/supabase-ca.crt');
+const ssl = fs.existsSync(CA_PATH)
+    ? { ca: fs.readFileSync(CA_PATH, 'utf8') }
+    : true;
+
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
-    ssl: true,
+    ssl,
     max: 10,
     idleTimeoutMillis: 30000
 });
