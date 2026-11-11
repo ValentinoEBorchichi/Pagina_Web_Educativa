@@ -1,4 +1,10 @@
------BEGIN CERTIFICATE-----
+// Certificado público de la CA raíz de Supabase (Project Settings -> Database
+// -> SSL Configuration -> Download certificate). Se guarda como una
+// constante de texto, no como un archivo leído en tiempo de ejecución, para
+// no construir ninguna ruta de archivo dinámica (acá no hay ningún dato de
+// usuario ni variable involucrada: siempre es este mismo certificado, pero
+// evita el patrón genérico que marcaba Codacy en db.js).
+module.exports = `-----BEGIN CERTIFICATE-----
 MIIDxDCCAqygAwIBAgIUbLxMod62P2ktCiAkxnKJwtE9VPYwDQYJKoZIhvcNAQEL
 BQAwazELMAkGA1UEBhMCVVMxEDAOBgNVBAgMB0RlbHdhcmUxEzARBgNVBAcMCk5l
 dyBDYXN0bGUxFTATBgNVBAoMDFN1cGFiYXNlIEluYzEeMBwGA1UEAwwVU3VwYWJh
@@ -21,3 +27,4 @@ Cea13BX2ZgJc7Au30vihLhub52De4P/4gonKsNHYdbWjg7OWKwNv/zitGDVDB9Y2
 CMTyZKG3XEu5Ghl1LEnI3QmEKsqaCLv12BnVjbkSeZsMnevJPs1Ye6TjjJwdik5P
 o/bKiIz+Fq8=
 -----END CERTIFICATE-----
+`;
