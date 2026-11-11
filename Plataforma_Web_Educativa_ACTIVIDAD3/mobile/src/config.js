@@ -25,6 +25,7 @@ const API_PATHS = new Set([
   '/api/financiero/planes-pago',
   '/api/financiero/facturas/elegir-plan',
   '/api/financiero/facturas/cuotas',
+  '/api/financiero/facturas/pdf',
 ]);
 const ALUMNO_RECURSOS = new Set(['inscripciones', 'estado-cuenta']);
 
@@ -56,12 +57,11 @@ export function apiUrl(path, params) {
     } else if (path === '/api/transporte/desinscribir') {
       const id = idDe(params);
       ruta = '/api/transporte/desinscribir' + (id ? `?alumno_id=${encodeURIComponent(String(id))}` : '');
-    } else if (path === '/api/financiero/facturas/elegir-plan' || path === '/api/financiero/facturas/cuotas') {
+    } else if (path === '/api/financiero/facturas/elegir-plan' || path === '/api/financiero/facturas/cuotas' || path === '/api/financiero/facturas/pdf') {
       const facturaId = Number(params?.facturaId);
       if (!Number.isSafeInteger(facturaId) || facturaId <= 0) throw new Error('Factura inválida');
-      ruta = path === '/api/financiero/facturas/elegir-plan'
-        ? `/api/financiero/facturas/${encodeURIComponent(String(facturaId))}/elegir-plan`
-        : `/api/financiero/facturas/${encodeURIComponent(String(facturaId))}/cuotas`;
+      const segmento = path === '/api/financiero/facturas/elegir-plan' ? 'elegir-plan' : path === '/api/financiero/facturas/cuotas' ? 'cuotas' : 'pdf';
+      ruta = `/api/financiero/facturas/${encodeURIComponent(String(facturaId))}/${segmento}`;
     } else {
       ruta = path;
     }

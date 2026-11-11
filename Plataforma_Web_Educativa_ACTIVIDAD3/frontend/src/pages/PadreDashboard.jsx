@@ -76,6 +76,40 @@ const PadreDashboard = () => {
         }
     };
 
+    // Abre el PDF de una factura (el backend lo genera y devuelve el buffer
+    // directo, no una URL firmada, por eso se pide con apiFetch y se abre
+    // como blob en vez de un <a href> simple que no llevaría el JWT).
+    const verFacturaPdf = async (facturaId) => {
+        try {
+            const response = await apiFetch(`${API_URL}/api/financiero/facturas/${facturaId}/pdf`);
+            if (!response.ok) {
+                const data = await response.json().catch(() => ({}));
+                return alert(data.message || 'No se pudo generar el PDF de la factura');
+            }
+            const blob = await response.blob();
+            window.open(window.URL.createObjectURL(blob), '_blank');
+        } catch (error) {
+            console.error(error);
+            alert('Error al abrir la factura');
+        }
+    };
+
+    // Abre el recibo en PDF de un comprobante ya aprobado.
+    const verReciboComprobante = async (comprobanteId) => {
+        try {
+            const response = await apiFetch(`${API_URL}/api/financiero/comprobantes/${comprobanteId}/recibo`);
+            if (!response.ok) {
+                const data = await response.json().catch(() => ({}));
+                return alert(data.message || 'No se pudo generar el recibo');
+            }
+            const blob = await response.blob();
+            window.open(window.URL.createObjectURL(blob), '_blank');
+        } catch (error) {
+            console.error(error);
+            alert('Error al abrir el recibo');
+        }
+    };
+
     // Catálogo de planes de pago activos (mismo para todas las facturas).
     const fetchPlanesPago = async () => {
         try {
@@ -642,9 +676,12 @@ const PadreDashboard = () => {
                                         const cuotas = cuotasPorFactura[f.id];
                                         return (
                                             <div key={f.id} style={facturaCard}>
-                                                <span style={{ fontSize: '0.82rem' }}>
-                                                    {f.periodo} · {f.alumno_apellido}, {f.alumno_nombre} · {f.estado} · <strong>${Number(f.saldo).toFixed(2)}</strong> / ${Number(f.total).toFixed(2)}
-                                                </span>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+                                                    <span style={{ fontSize: '0.82rem' }}>
+                                                        {f.periodo} · {f.alumno_apellido}, {f.alumno_nombre} · {f.estado} · <strong>${Number(f.saldo).toFixed(2)}</strong> / ${Number(f.total).toFixed(2)}
+                                                    </span>
+                                                    <button onClick={() => verFacturaPdf(f.id)} style={{ background: 'none', border: 'none', color: 'var(--blue)', fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', fontSize: '0.78rem' }}>📄 PDF</button>
+                                                </div>
 
                                                 {!pagable ? null : !f.plan_pago_id ? (
                                                     <div style={{ marginTop: '10px', borderTop: '1px solid #f1f5f9', paddingTop: '10px' }}>
@@ -755,7 +792,12 @@ const PadreDashboard = () => {
                                                     color: c.estado_verificacion === 'Aprobado' ? 'var(--green)' : c.estado_verificacion === 'Rechazado' ? '#dc2626' : 'var(--orange)'
                                                 }}>{c.estado_verificacion}</span>
                                             </span>
-                                            <button onClick={() => verComprobante(c.id)} style={{ background: 'none', border: 'none', color: 'var(--blue)', fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>📄 Ver</button>
+                                            <div style={{ display: 'flex', gap: '10px' }}>
+                                                <button onClick={() => verComprobante(c.id)} style={{ background: 'none', border: 'none', color: 'var(--blue)', fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>📄 Ver</button>
+                                                {c.estado_verificacion === 'Aprobado' && (
+                                                    <button onClick={() => verReciboComprobante(c.id)} style={{ background: 'none', border: 'none', color: 'var(--green)', fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>🧾 Recibo</button>
+                                                )}
+                                            </div>
                                         </div>
                                     ))}
                                 </div>
