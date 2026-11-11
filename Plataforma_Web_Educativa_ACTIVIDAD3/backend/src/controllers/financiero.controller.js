@@ -784,7 +784,9 @@ function enviarPdf(res, { buffer, nombreArchivo }) {
         'Content-Length': buffer.length,
         'Cache-Control': 'private, no-store'
     });
-    res.send(buffer);
+    // end (no send): es un binario ya generado por el servidor, con su
+    // Content-Type fijo; no se interpreta ni se refleja entrada del usuario.
+    res.end(buffer);
 }
 
 // GET /api/financiero/facturas/:id/pdf — dueño o admin.

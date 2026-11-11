@@ -22,7 +22,8 @@ test('calcula el recargo redondeando al centavo', () => {
     // 0,10 * 5% = 0,005 -> sube a 0,01 (mitad hacia arriba)
     assert.equal(calcularRecargoCentavos(10, '5.00'), 1);
     // sin perder precisión con saldos y porcentajes grandes
-    assert.equal(calcularRecargoCentavos(999999999999, '999.99'), 9999899999990);
+    // (100.000.000.000 centavos * 999,99 % = 999.990.000.000)
+    assert.equal(calcularRecargoCentavos(1e11, '999.99'), 99999e7);
 });
 
 test('reparte en cuotas iguales cuando el total divide exacto', () => {

@@ -473,7 +473,7 @@ Se agrega con `backend/supabase/migracion_cuotas.sql` (idempotente; `schema.sql`
 | `DELETE` | `/api/deportes/desinscribir/:deporte_id?alumno_id=` | admin, padre, alumno | Baja de un deporte. El alumno solo la suya (`alumno_id` opcional); el padre solo sus hijos; admin cualquiera. |
 | `DELETE` | `/api/transporte/desinscribir?alumno_id=` | admin, padre, alumno | Baja del transporte (`alumnos.transporte_id = NULL`), mismas reglas de dueño. `404` si no viajaba. |
 
-Los PDF se generan en el momento con los datos vigentes y se devuelven como binario (`application/pdf`); el cliente los pide con su JWT y los abre como blob. Usan la paleta de la web (`frontend/src/index.css`) y el logo de `backend/src/assets/logo.png`.
+Los PDF se generan en el momento con los datos vigentes y se devuelven como binario (`application/pdf`); el cliente los pide con su JWT y los abre como blob. Usan la paleta de la web (`frontend/src/index.css`) y el logo de `backend/src/assets/logo.js`.
 
 ## Etapa D — Diseño de la aplicación móvil (Responsable: Sebastián Flores)
 

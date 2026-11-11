@@ -1,6 +1,5 @@
-const path = require('path');
-const fs = require('fs');
 const PDFDocument = require('pdfkit');
+const LOGO = require('../assets/logo');
 
 // Piezas comunes de los PDF institucionales (factura y recibo): paleta de la
 // web (frontend/src/index.css, :root), encabezado, tarjetas, tabla, badges y
@@ -40,11 +39,6 @@ const ESTADOS = Object.freeze({
 const PAGINA = Object.freeze({ ancho: 595.28, alto: 841.89, margen: 40, pie: 38 });
 const ANCHO_UTIL = PAGINA.ancho - PAGINA.margen * 2;
 const LIMITE_INFERIOR = PAGINA.alto - PAGINA.margen - PAGINA.pie;
-
-// El logo es opcional: si el archivo no está (por ejemplo, un deploy que no
-// copió assets) el PDF se genera igual, solo sin la imagen.
-const RUTA_LOGO = path.join(__dirname, '..', 'assets', 'logo.png');
-const LOGO = fs.existsSync(RUTA_LOGO) ? RUTA_LOGO : null;
 
 function moneda(valor) {
     return new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' })
