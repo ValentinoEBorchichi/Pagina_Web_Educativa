@@ -8,19 +8,46 @@ import { apiUrl } from '../config';
 // hijo al cambiar de pestaña.
 const AlumnosContext = createContext(null);
 
-async function obtenerJson(path, token, alumnoId) {
-  const res = await fetch(apiUrl(path, alumnoId), {
+// Cada función llama a fetch() con una ruta literal fija, nunca con una
+// variable "path" de por medio (aunque apiUrl() ya valida contra una lista
+// blanca y el origin, un análisis estático genérico no puede probar que acá
+// nunca llega una URL controlada por el usuario si hay una indirección de
+// por medio -por eso no hay un helper único "obtenerJson(path, ...)"-).
+
+async function obtenerServicios(token) {
+  const res = await fetch(apiUrl('/api/movil/mis-inscripciones'), {
     headers: { Authorization: `Bearer ${token}` },
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.message || 'No se pudo completar la solicitud');
+  if (!res.ok) throw new Error(data.message || 'No se pudieron cargar los servicios');
+  if (!data.alumnos?.length) throw new Error('No hay alumnos vinculados a esta cuenta.');
+  return data.alumnos;
+}
+
+async function obtenerMiUsuario(token) {
+  const res = await fetch(apiUrl('/api/auth/me'), {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) return null; // el saludo no debe romper la pantalla si falla
+  return res.json().catch(() => null);
+}
+
+async function obtenerResumenAlumno(token, alumnoId) {
+  const res = await fetch(apiUrl('/api/academico/mis-hijos/resumen', alumnoId), {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.message || 'No se pudo cargar el resumen académico');
   return data;
 }
 
-async function obtenerServicios(token) {
-  const data = await obtenerJson('/api/movil/mis-inscripciones', token);
-  if (!data.alumnos?.length) throw new Error('No hay alumnos vinculados a esta cuenta.');
-  return data.alumnos;
+async function obtenerFacturasAlumno(token, alumnoId) {
+  const res = await fetch(apiUrl('/api/facturas', alumnoId), {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.message || 'No se pudo cargar la cuenta');
+  return data;
 }
 
 export function AlumnosProvider({ token, onLogout, children }) {
@@ -45,7 +72,7 @@ export function AlumnosProvider({ token, onLogout, children }) {
     setError('');
     Promise.all([
       obtenerServicios(token),
-      obtenerJson('/api/auth/me', token).catch(() => null), // el saludo no debe romper la pantalla si falla
+      obtenerMiUsuario(token).catch(() => null),
     ])
       .then(([lista, me]) => {
         if (cancelado) return;
@@ -74,8 +101,8 @@ export function AlumnosProvider({ token, onLogout, children }) {
     let cancelado = false;
     setCargandoDetalle(true);
     Promise.all([
-      obtenerJson('/api/academico/mis-hijos/resumen', token, alumnoId),
-      obtenerJson('/api/facturas', token, alumnoId),
+      obtenerResumenAlumno(token, alumnoId),
+      obtenerFacturasAlumno(token, alumnoId),
     ])
       .then(([resumen, cuenta]) => {
         if (cancelado) return;
