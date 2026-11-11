@@ -25,6 +25,9 @@ import CuentaScreen from './src/screens/CuentaScreen';
 import TransporteScreen from './src/screens/TransporteScreen';
 import MasScreen from './src/screens/MasScreen';
 import DeportesScreen from './src/screens/DeportesScreen';
+import MisHijosScreen from './src/screens/MisHijosScreen';
+import AvisosScreen from './src/screens/AvisosScreen';
+import MenuSemanalScreen from './src/screens/MenuSemanalScreen';
 import { ComprobanteProvisorioScreen, HistorialScreen } from './src/screens/HistorialScreen';
 import CambiarPasswordScreen from './src/screens/CambiarPasswordScreen';
 import SubirComprobanteScreen from './src/screens/SubirComprobanteScreen';
@@ -138,6 +141,21 @@ function AuthenticatedApp({ token, onLogout }) {
             name="CambiarPassword"
             component={CambiarPasswordScreen}
             options={{ header: () => <AppHeader title="Cambiar contraseña" /> }}
+          />
+          <Stack.Screen
+            name="MisHijos"
+            component={MisHijosScreen}
+            options={{ header: () => <AppHeader title="Mis hijos" subtitle="Vincular o desvincular un alumno" /> }}
+          />
+          <Stack.Screen
+            name="Avisos"
+            component={AvisosScreen}
+            options={{ header: () => <AppHeader title="Avisos y citaciones" /> }}
+          />
+          <Stack.Screen
+            name="MenuSemanal"
+            component={MenuSemanalScreen}
+            options={{ header: () => <AppHeader title="Menú semanal" subtitle="Comedor escolar" /> }}
           />
         </Stack.Navigator>
         <StatusBar style="light" />

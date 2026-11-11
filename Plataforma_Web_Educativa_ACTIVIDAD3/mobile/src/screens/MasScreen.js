@@ -15,9 +15,7 @@ function Opcion({ titulo, descripcion, onPress, danger = false, disabled = false
   );
 }
 
-// Pestaña "Más": todo lo que no entra en Home/Cobranzas/Transporte. Hoy
-// cuenta y sesión; Mis Hijos (vincular/desvincular), Avisos y Menú Semanal
-// llegan en el paso de paridad con la web.
+// Pestaña "Más": todo lo que no entra en Home/Cobranzas/Transporte.
 export default function MasScreen({ navigation }) {
   const { token, onLogout } = useAlumnos();
 
@@ -33,9 +31,9 @@ export default function MasScreen({ navigation }) {
       <View style={styles.seccion}>
         <Text style={styles.tituloSeccion}>Familia</Text>
         <View style={styles.tarjeta}>
-          <Opcion titulo="Mis hijos" descripcion="Próximamente: vincular o desvincular un hijo" disabled />
-          <Opcion titulo="Avisos y citaciones" descripcion="Próximamente" disabled />
-          <Opcion titulo="Menú semanal del comedor" descripcion="Próximamente" disabled />
+          <Opcion titulo="Mis hijos" descripcion="Vincular o desvincular un alumno" onPress={() => navigation.navigate('MisHijos')} />
+          <Opcion titulo="Avisos y citaciones" descripcion="Avisos institucionales" onPress={() => navigation.navigate('Avisos')} />
+          <Opcion titulo="Menú semanal del comedor" descripcion="Menú de la semana" onPress={() => navigation.navigate('MenuSemanal')} />
         </View>
       </View>
 

@@ -16,6 +16,10 @@ const API_PATHS = new Set([
   '/api/comprobantes',
   '/api/padres/mis-hijos',
   '/api/academico/mis-hijos/resumen',
+  '/api/academico/alumnos-disponibles',
+  '/api/academico/vincular-hijo',
+  '/api/academico/desvincular-hijo',
+  '/api/comunicacion/notificaciones',
   '/api/deportes',
   '/api/deportes/inscribir',
   '/api/deportes/desinscribir',
@@ -57,6 +61,10 @@ export function apiUrl(path, params) {
     } else if (path === '/api/transporte/desinscribir') {
       const id = idDe(params);
       ruta = '/api/transporte/desinscribir' + (id ? `?alumno_id=${encodeURIComponent(String(id))}` : '');
+    } else if (path === '/api/academico/desvincular-hijo') {
+      const alumnoId = Number(params?.alumnoId);
+      if (!Number.isSafeInteger(alumnoId) || alumnoId <= 0) throw new Error('Alumno inválido');
+      ruta = `/api/academico/desvincular-hijo/${encodeURIComponent(String(alumnoId))}`;
     } else if (path === '/api/financiero/facturas/elegir-plan' || path === '/api/financiero/facturas/cuotas' || path === '/api/financiero/facturas/pdf') {
       const facturaId = Number(params?.facturaId);
       if (!Number.isSafeInteger(facturaId) || facturaId <= 0) throw new Error('Factura inválida');
