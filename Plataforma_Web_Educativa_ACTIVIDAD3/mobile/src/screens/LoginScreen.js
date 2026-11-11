@@ -1,6 +1,8 @@
 import { useState } from 'react';
-import { ActivityIndicator, Image, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { apiUrl } from '../config';
+import { COLORS, FONTS, GRADIENT_BRAND, RADIUS, SHADOW } from '../theme';
 
 export default function LoginScreen({ navigation, onLogin }) {
   const [dni, setDni] = useState('');
@@ -26,85 +28,92 @@ export default function LoginScreen({ navigation, onLogin }) {
     } finally { setCargando(false); }
   }
 
-  return <View style={styles.container}>
-    <View style={styles.decoracion}>
-      <View style={[styles.acento, styles.acentoNaranja]} />
-      <View style={[styles.acento, styles.acentoVerde]} />
-      <View style={[styles.acento, styles.acentoVioleta]} />
-    </View>
+  return (
+    <LinearGradient colors={GRADIENT_BRAND} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.fondo}>
+      <View style={[styles.circulo, styles.circuloArriba]} />
+      <View style={[styles.circulo, styles.circuloAbajo]} />
 
-    <View style={styles.marca}>
-      <Image source={require('../../assets/educar-logo.png')} style={styles.logo} resizeMode="contain" />
-      <Text style={styles.subtitulo}>Portal de familias</Text>
-    </View>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.flexCentro}>
+        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+          <View style={styles.marca}>
+            <Image source={require('../../assets/educar-logo.png')} style={styles.logo} resizeMode="contain" />
+            <Text style={styles.subtituloMarca}>Portal de familias</Text>
+          </View>
 
-    <View style={styles.tarjeta}>
-      <Text style={styles.titulo}>Ingresá a tu cuenta</Text>
-      <Text style={styles.descripcion}>Accedé para consultar los servicios y cuotas de tus hijos.</Text>
+          <View style={styles.tarjeta}>
+            <Text style={styles.titulo}>Ingresá a tu cuenta</Text>
+            <Text style={styles.descripcion}>Accedé para consultar los servicios y cuotas de tus hijos.</Text>
 
-      <Text style={styles.etiqueta}>Usuario o correo</Text>
-      <TextInput
-        style={styles.input}
-        placeholder="Usuario o correo de la cuenta"
-        placeholderTextColor="#94a3b8"
-        autoCapitalize="none"
-        value={dni}
-        onChangeText={setDni}
-      />
+            <Text style={styles.etiqueta}>Usuario o correo</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Usuario o correo de la cuenta"
+              placeholderTextColor="#94a3b8"
+              autoCapitalize="none"
+              value={dni}
+              onChangeText={setDni}
+            />
 
-      <Text style={styles.etiqueta}>Contraseña</Text>
-      <TextInput
-        style={styles.input}
-        placeholder="Ingresá tu contraseña"
-        placeholderTextColor="#94a3b8"
-        secureTextEntry
-        value={password}
-        onChangeText={setPassword}
-        onSubmitEditing={ingresar}
-      />
+            <Text style={styles.etiqueta}>Contraseña</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Ingresá tu contraseña"
+              placeholderTextColor="#94a3b8"
+              secureTextEntry
+              value={password}
+              onChangeText={setPassword}
+              onSubmitEditing={ingresar}
+            />
 
-      {error ? <View style={styles.errorCaja}><Text style={styles.error}>{error}</Text></View> : null}
+            {error ? <View style={styles.errorCaja}><Text style={styles.error}>{error}</Text></View> : null}
 
-      <Pressable
-        style={({ pressed }) => [styles.boton, pressed && styles.botonPresionado]}
-        onPress={ingresar}
-        disabled={cargando}
-      >
-        {cargando ? <ActivityIndicator color="#ffffff" /> : <Text style={styles.botonTexto}>INGRESAR</Text>}
-      </Pressable>
+            <Pressable
+              style={({ pressed }) => [styles.boton, pressed && styles.botonPresionado]}
+              onPress={ingresar}
+              disabled={cargando}
+            >
+              {cargando ? <ActivityIndicator color={COLORS.white} /> : <Text style={styles.botonTexto}>INGRESAR →</Text>}
+            </Pressable>
 
-      <Pressable onPress={() => navigation.navigate('RecuperarPassword')} style={styles.recuperar}>
-        <Text style={styles.recuperarTexto}>¿Olvidaste tu contraseña?</Text>
-      </Pressable>
-    </View>
+            <Pressable onPress={() => navigation.navigate('RecuperarPassword')} style={styles.recuperar}>
+              <Text style={styles.recuperarTexto}>¿Olvidaste tu contraseña?</Text>
+            </Pressable>
+          </View>
 
-    <Text style={styles.pie}>Acceso exclusivo para cuentas de padre</Text>
-  </View>;
+          <Text style={styles.pie}>Acceso exclusivo para cuentas de padre</Text>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </LinearGradient>
+  );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: 'center', padding: 24, backgroundColor: '#f1f6fb' },
-  decoracion: { position: 'absolute', top: 0, left: 0, right: 0, height: 9, flexDirection: 'row' },
-  acento: { flex: 1 },
-  acentoNaranja: { backgroundColor: '#f5820d' },
-  acentoVerde: { backgroundColor: '#2e9d68' },
-  acentoVioleta: { backgroundColor: '#7652a8' },
+  fondo: { flex: 1 },
+  circulo: { position: 'absolute', width: 260, height: 260, borderRadius: 260, backgroundColor: 'rgba(255,255,255,0.06)' },
+  circuloArriba: { top: -80, left: -80 },
+  circuloAbajo: { bottom: -100, right: -80 },
+  flexCentro: { flex: 1 },
+  scroll: { flexGrow: 1, justifyContent: 'center', padding: 24 },
   marca: { alignItems: 'center', marginBottom: 24 },
-  logo: { width: 64, height: 64, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: '#1a5fa8', marginBottom: 12, shadowColor: '#154e8a', shadowOpacity: 0.25, shadowRadius: 8, elevation: 5 },
-  logoTexto: { color: '#ffffff', fontSize: 38, fontWeight: '800' },
-  institucion: { color: '#154e8a', fontSize: 24, fontWeight: '800', textAlign: 'center' },
-  subtitulo: { color: '#64748b', fontSize: 15, marginTop: 4 },
-  tarjeta: { backgroundColor: '#ffffff', borderRadius: 18, padding: 22, shadowColor: '#0f172a', shadowOpacity: 0.1, shadowRadius: 14, elevation: 4 },
-  titulo: { color: '#0f172a', fontSize: 24, fontWeight: '800', marginBottom: 8 },
-  descripcion: { color: '#64748b', fontSize: 14, lineHeight: 20, marginBottom: 20 },
-  etiqueta: { color: '#154e8a', fontSize: 13, fontWeight: '700', marginBottom: 7 },
-  input: { borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 13, fontSize: 16, color: '#0f172a', marginBottom: 16, backgroundColor: '#f8fafc' },
-  errorCaja: { borderRadius: 9, padding: 10, marginBottom: 14, backgroundColor: '#fef2f2' },
-  error: { color: '#b91c1c', fontSize: 13, lineHeight: 18 },
-  boton: { minHeight: 50, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: '#1a5fa8', shadowColor: '#154e8a', shadowOpacity: 0.2, shadowRadius: 5, elevation: 3 },
-  botonPresionado: { backgroundColor: '#154e8a', transform: [{ scale: 0.99 }] },
-  botonTexto: { color: '#ffffff', fontSize: 15, fontWeight: '800', letterSpacing: 0.5 },
+  logo: { width: 110, height: 95, marginBottom: 8 },
+  subtituloMarca: { color: COLORS.white, opacity: 0.85, fontFamily: FONTS.bodySemiBold, fontSize: 14 },
+  tarjeta: { backgroundColor: COLORS.white, borderRadius: RADIUS.xl, padding: 24, ...SHADOW.md },
+  titulo: { color: COLORS.blue, fontFamily: FONTS.display, fontSize: 24, marginBottom: 6 },
+  descripcion: { color: COLORS.textSoft, fontFamily: FONTS.body, fontSize: 14, lineHeight: 20, marginBottom: 20 },
+  etiqueta: { color: COLORS.textSoft, fontFamily: FONTS.bodyExtraBold, fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 7 },
+  input: {
+    borderWidth: 2, borderColor: COLORS.border, borderRadius: RADIUS.sm, paddingHorizontal: 14, paddingVertical: 13,
+    fontSize: 16, fontFamily: FONTS.body, color: COLORS.text, marginBottom: 16, backgroundColor: COLORS.bg,
+  },
+  errorCaja: { borderRadius: RADIUS.sm, padding: 10, marginBottom: 14, backgroundColor: COLORS.dangerBg, borderWidth: 1, borderColor: COLORS.dangerBorder },
+  error: { color: COLORS.danger, fontFamily: FONTS.bodySemiBold, fontSize: 13, lineHeight: 18 },
+  boton: {
+    minHeight: 52, borderRadius: RADIUS.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.violet,
+    shadowColor: COLORS.violet, shadowOpacity: 0.3, shadowRadius: 10, shadowOffset: { width: 0, height: 6 }, elevation: 4,
+  },
+  botonPresionado: { backgroundColor: '#6d28d9' },
+  botonTexto: { color: COLORS.white, fontSize: 15, fontFamily: FONTS.bodyExtraBold, letterSpacing: 0.5 },
   recuperar: { alignItems: 'center', paddingTop: 18, paddingBottom: 2 },
-  recuperarTexto: { color: '#7652a8', fontWeight: '700', fontSize: 14 },
-  pie: { textAlign: 'center', color: '#64748b', fontSize: 12, marginTop: 20 },
+  recuperarTexto: { color: COLORS.violet, fontFamily: FONTS.bodyBold, fontSize: 14 },
+  pie: { textAlign: 'center', color: COLORS.white, opacity: 0.8, fontFamily: FONTS.body, fontSize: 12, marginTop: 20 },
 });

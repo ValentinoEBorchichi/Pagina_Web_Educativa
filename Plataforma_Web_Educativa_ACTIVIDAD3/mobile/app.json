@@ -29,7 +29,8 @@
           "photosPermission": "La app necesita acceder a las fotos para adjuntar el ticket de transferencia.",
           "microphonePermission": false
         }
-      ]
+      ],
+      "expo-font"
     ],
     "extra": {
       "eas": {
