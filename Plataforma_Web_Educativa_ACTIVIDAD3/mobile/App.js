@@ -24,6 +24,7 @@ import ServiciosAlumnoScreen from './src/screens/ServiciosAlumnoScreen';
 import CuentaScreen from './src/screens/CuentaScreen';
 import TransporteScreen from './src/screens/TransporteScreen';
 import MasScreen from './src/screens/MasScreen';
+import DeportesScreen from './src/screens/DeportesScreen';
 import { ComprobanteProvisorioScreen, HistorialScreen } from './src/screens/HistorialScreen';
 import CambiarPasswordScreen from './src/screens/CambiarPasswordScreen';
 import SubirComprobanteScreen from './src/screens/SubirComprobanteScreen';
@@ -57,10 +58,11 @@ function CobranzasTab(props) {
   );
 }
 
-// Header de cada pestaña: lee el saludo y "Salir" del AlumnosContext (está
-// disponible porque MainTabs se renderiza dentro del AlumnosProvider), así
-// el botón de cerrar sesión queda siempre visible arriba, en las 4 pestañas.
-function TabHeader({ title, subtitle }) {
+// Header de cada pestaña/pantalla autenticada: lee el saludo y "Salir" del
+// AlumnosContext (disponible en todo el stack autenticado), así el botón de
+// cerrar sesión queda siempre visible arriba, sin depender de qué pantalla
+// lo registre.
+function AppHeader({ title, subtitle }) {
   const { onLogout, nombreUsuario } = useAlumnos();
   return <Header title={title} subtitle={subtitle} nombre={nombreUsuario} onLogout={onLogout} />;
 }
@@ -81,24 +83,66 @@ function MainTabs() {
       <Tab.Screen
         name="Home"
         component={ServiciosAlumnoScreen}
-        options={{ header: () => <TabHeader title="Inicio" subtitle="Educar para Transformar" /> }}
+        options={{ header: () => <AppHeader title="Inicio" subtitle="Educar para Transformar" /> }}
       />
       <Tab.Screen
         name="Cobranzas"
         component={CobranzasTab}
-        options={{ header: () => <TabHeader title="Cobranzas" subtitle="Cuotas, facturas y comprobantes" /> }}
+        options={{ header: () => <AppHeader title="Cobranzas" subtitle="Cuotas, facturas y comprobantes" /> }}
       />
       <Tab.Screen
         name="Transporte"
         component={TransporteScreen}
-        options={{ header: () => <TabHeader title="Transporte" subtitle="Recorrido escolar" /> }}
+        options={{ header: () => <AppHeader title="Transporte" subtitle="Recorrido escolar" /> }}
       />
       <Tab.Screen
         name="MiCuenta"
         component={MasScreen}
-        options={{ tabBarLabel: 'Mi Cuenta', header: () => <TabHeader title="Mi Cuenta" subtitle="Cuenta y familia" /> }}
+        options={{ tabBarLabel: 'Mi Cuenta', header: () => <AppHeader title="Mi Cuenta" subtitle="Cuenta y familia" /> }}
       />
     </Tab.Navigator>
+  );
+}
+
+// Stack autenticado completo (tabs + pantallas que se abren "encima",
+// ocultando la barra inferior). Envuelto en AlumnosProvider para que CUALQUIER
+// pantalla de acá adentro -incluida Deportes, que no es una tab- pueda leer
+// el hijo seleccionado con useAlumnos() sin pasarlo a mano por parámetros.
+function AuthenticatedApp({ token, onLogout }) {
+  return (
+    <AlumnosProvider token={token} onLogout={onLogout}>
+      <NavigationContainer>
+        <Stack.Navigator screenOptions={{ contentStyle: { backgroundColor: COLORS.bg } }}>
+          <Stack.Screen name="Tabs" component={MainTabs} options={{ headerShown: false }} />
+          <Stack.Screen
+            name="Deportes"
+            component={DeportesScreen}
+            options={{ header: () => <AppHeader title="Deportes" subtitle="Inscripción y baja" /> }}
+          />
+          <Stack.Screen
+            name="Historial"
+            component={HistorialScreen}
+            options={{ header: () => <AppHeader title="Historial de facturas" /> }}
+          />
+          <Stack.Screen
+            name="ComprobanteProvisorio"
+            component={ComprobanteProvisorioScreen}
+            options={{ header: () => <AppHeader title="Comprobante provisorio" /> }}
+          />
+          <Stack.Screen
+            name="SubirComprobante"
+            component={SubirComprobanteScreen}
+            options={{ header: () => <AppHeader title="Subir comprobante" /> }}
+          />
+          <Stack.Screen
+            name="CambiarPassword"
+            component={CambiarPasswordScreen}
+            options={{ header: () => <AppHeader title="Cambiar contraseña" /> }}
+          />
+        </Stack.Navigator>
+        <StatusBar style="light" />
+      </NavigationContainer>
+    </AlumnosProvider>
   );
 }
 
@@ -129,59 +173,32 @@ export default function App() {
     );
   }
 
-  const cerrarSesion = async () => {
-    await SecureStore.deleteItemAsync('jwt');
-    setSesion(null);
-  };
+  if (sesion) {
+    return (
+      <AuthenticatedApp
+        token={sesion.token}
+        onLogout={async () => {
+          await SecureStore.deleteItemAsync('jwt');
+          setSesion(null);
+        }}
+      />
+    );
+  }
 
   return (
     <NavigationContainer>
       <Stack.Navigator screenOptions={{ contentStyle: { backgroundColor: COLORS.bg } }}>
-        {sesion ? (
-          <Stack.Group>
-            <Stack.Screen name="Tabs" options={{ headerShown: false }}>
-              {() => (
-                <AlumnosProvider token={sesion.token} onLogout={cerrarSesion}>
-                  <MainTabs />
-                </AlumnosProvider>
-              )}
-            </Stack.Screen>
-            <Stack.Screen
-              name="Historial"
-              component={HistorialScreen}
-              options={{ header: () => <Header title="Historial de facturas" onLogout={cerrarSesion} /> }}
-            />
-            <Stack.Screen
-              name="ComprobanteProvisorio"
-              component={ComprobanteProvisorioScreen}
-              options={{ header: () => <Header title="Comprobante provisorio" onLogout={cerrarSesion} /> }}
-            />
-            <Stack.Screen
-              name="SubirComprobante"
-              component={SubirComprobanteScreen}
-              options={{ header: () => <Header title="Subir comprobante" onLogout={cerrarSesion} /> }}
-            />
-            <Stack.Screen
-              name="CambiarPassword"
-              component={CambiarPasswordScreen}
-              options={{ header: () => <Header title="Cambiar contraseña" onLogout={cerrarSesion} /> }}
-            />
-          </Stack.Group>
-        ) : (
-          <Stack.Group>
-            <Stack.Screen name="Login" options={{ headerShown: false }}>
-              {(props) => <LoginScreen {...props} onLogin={async (token) => {
-                await SecureStore.setItemAsync('jwt', token);
-                setSesion({ token });
-              }} />}
-            </Stack.Screen>
-            <Stack.Screen
-              name="RecuperarPassword"
-              component={RecuperarPasswordScreen}
-              options={{ header: () => <Header title="Recuperar contraseña" /> }}
-            />
-          </Stack.Group>
-        )}
+        <Stack.Screen name="Login" options={{ headerShown: false }}>
+          {(props) => <LoginScreen {...props} onLogin={async (token) => {
+            await SecureStore.setItemAsync('jwt', token);
+            setSesion({ token });
+          }} />}
+        </Stack.Screen>
+        <Stack.Screen
+          name="RecuperarPassword"
+          component={RecuperarPasswordScreen}
+          options={{ header: () => <Header title="Recuperar contraseña" /> }}
+        />
       </Stack.Navigator>
       <StatusBar style="light" />
     </NavigationContainer>

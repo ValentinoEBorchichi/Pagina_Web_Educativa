@@ -1,4 +1,4 @@
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useAlumnos } from '../context/AlumnosContext';
 import SelectorHijos from '../components/SelectorHijos';
 import AlertaDeuda from '../components/AlertaDeuda';
@@ -10,7 +10,7 @@ import { COLORS, FONTS, FONT_SIZE, TEXT } from '../theme';
 // Cobranzas/Transporte/Mi Cuenta tienen sus propias pestañas.
 const MAX_DEPORTES = 2;
 
-export default function ServiciosAlumnoScreen() {
+export default function ServiciosAlumnoScreen({ navigation }) {
   const {
     alumnos, alumnoId, alumnoSeleccionado, setAlumnoId, cargando, error, recargar,
     resumenAlumno, deudaAlumno, cargandoDetalle,
@@ -50,6 +50,10 @@ export default function ServiciosAlumnoScreen() {
         {deportes.map((d) => <FilaServicio key={d.id} titulo={d.nombre} detalle={d.horario} />)}
       </TarjetaServicio>
 
+      <Pressable onPress={() => navigation.navigate('Deportes')} style={({ pressed }) => [styles.botonGestionar, pressed && styles.botonGestionarPresionado]}>
+        <Text style={styles.botonGestionarTexto}>Gestionar deportes (inscribir / dar de baja) →</Text>
+      </Pressable>
+
       <TarjetaServicio icono="restaurant" color={COLORS.orange} titulo="Comedor" vacio={alumnoSeleccionado?.comedor ? null : 'Sin inscripción al comedor'}>
         {alumnoSeleccionado?.comedor ? <FilaServicio titulo="Inscripto al comedor" /> : null}
       </TarjetaServicio>
@@ -88,6 +92,9 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.bg },
   contenido: { padding: 16, paddingBottom: 32 },
   centro: { flex: 1, backgroundColor: COLORS.bg },
+  botonGestionar: { alignItems: 'center', paddingVertical: 12, marginTop: -4, marginBottom: 16 },
+  botonGestionarPresionado: { opacity: 0.6 },
+  botonGestionarTexto: { color: COLORS.blue, fontFamily: FONTS.bodyExtraBold, fontSize: FONT_SIZE.sm },
   promedioFila: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8, paddingTop: 10, borderTopWidth: 1, borderTopColor: COLORS.bg },
   promedioEtiqueta: { ...TEXT.subtitle },
   promedioValor: { fontSize: FONT_SIZE.xl, fontFamily: FONTS.bodyBlack, color: COLORS.blue },
