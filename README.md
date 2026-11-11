@@ -436,6 +436,45 @@ Invoke-RestMethod -Method Post -Uri "$api/api/profesores/asignar" -ContentType '
 
 ---
 
+## Planes de pago en cuotas, recibos y PDFs (PostgreSQL / Supabase)
+
+El módulo financiero corre sobre Postgres (`backend/supabase/schema.sql`). Esta sección documenta el pago en cuotas, los recibos y los PDF institucionales.
+
+### Modelo de datos
+
+Se agrega con `backend/supabase/migracion_cuotas.sql` (idempotente; `schema.sql` ya la incluye para instalaciones nuevas):
+
+| Tabla / columna | Descripción |
+|---|---|
+| `plan_pago` | Catálogo de planes: `nombre` (único), `cantidad_cuotas` (1 a 24), `recargo_pct` (≥ 0) y `activo` (la baja es lógica). La migración carga tres planes iniciales (`Pago único` 0 %, `3 cuotas` 5 %, `6 cuotas` 10 %), editables por el admin. |
+| `factura.plan_pago_id` | Plan elegido para la factura (`NULL` = todavía sin plan). Una vez elegido no se cambia. |
+| `factura_cuota` | Cuotas generadas al elegir el plan: `numero_cuota`, `monto`, `vencimiento`, `estado` (`Pendiente`, `Pagada`, `Vencida`, `Anulada`) y `comprobante_transferencia_id` (a lo sumo un comprobante por cuota). |
+
+### Reglas de negocio
+
+- **Elegir plan** (en una transacción, con la factura bloqueada): el recargo del plan (`saldo × recargo_pct`) se suma a `factura.total` y a `factura.saldo` —así `total − saldo` sigue siendo lo pagado— y el saldo resultante se reparte en `cantidad_cuotas` cuotas. Se calcula en centavos: la suma de las cuotas es exacta y los centavos sobrantes van a las primeras cuotas. La cuota 1 vence el mayor entre el vencimiento de la factura y hoy; las siguientes, de a un mes.
+- **Comprobantes por cuota**: `POST /api/financiero/comprobantes` acepta `factura_cuota_id`. El monto debe coincidir con el de la cuota, la cuota tiene que estar pendiente y sin otro comprobante en revisión. Una factura con plan exige indicar la cuota; una factura sin plan sigue pagándose con `factura_id`.
+- **Aprobar** un comprobante descuenta el monto de la factura, deja la cuota en `Pagada` y recalcula `saldos` (suma de los saldos de las facturas no anuladas del alumno). **Rechazar** no cambia la cuota: sigue `Pendiente`, conserva el motivo del rechazo y se puede volver a subir un comprobante.
+- **Dueño**: detalle, cuotas, saldo, comprobantes y PDF solo se devuelven al padre/alumno dueño de la factura (o al admin); si no, `404`.
+
+### Endpoints
+
+| Método | Ruta | Roles | Descripción |
+|---|---|---|---|
+| `GET` | `/api/financiero/planes-pago` | admin, padre, alumno | Planes (el admin ve también los inactivos). |
+| `POST` | `/api/financiero/planes-pago` | admin | Alta de plan: `{ nombre, cantidad_cuotas, recargo_pct }`. `409` si el nombre ya existe. |
+| `DELETE` | `/api/financiero/planes-pago/:id` | admin | Baja lógica (`activo = false`). |
+| `POST` | `/api/financiero/facturas/:id/elegir-plan` | admin, padre | Body `{ plan_pago_id }`. Genera las cuotas. `409` si ya tiene plan, no tiene saldo o tiene un comprobante pendiente. |
+| `GET` | `/api/financiero/facturas/:id/cuotas` | admin, padre, alumno | Cuotas con el estado de su comprobante (`comprobante_estado`, `comprobante_observaciones`). |
+| `POST` | `/api/financiero/comprobantes` | admin, padre, alumno | `multipart/form-data`: `archivo`, `monto`, `fecha_transferencia` y `factura_cuota_id` (o `factura_id`). |
+| `POST` | `/api/financiero/comprobantes/:id/aprobar` · `/rechazar` | admin | Verificación; actualizan la cuota y el saldo. |
+| `GET` | `/api/financiero/facturas/:id/pdf` | admin, padre, alumno | PDF de la factura (con recargo y cuotas si tiene plan). |
+| `GET` | `/api/financiero/comprobantes/:id/recibo` | admin, padre, alumno | PDF del recibo; solo para comprobantes aprobados (`409` si no). |
+| `DELETE` | `/api/deportes/desinscribir/:deporte_id?alumno_id=` | admin, padre, alumno | Baja de un deporte. El alumno solo la suya (`alumno_id` opcional); el padre solo sus hijos; admin cualquiera. |
+| `DELETE` | `/api/transporte/desinscribir?alumno_id=` | admin, padre, alumno | Baja del transporte (`alumnos.transporte_id = NULL`), mismas reglas de dueño. `404` si no viajaba. |
+
+Los PDF se generan en el momento con los datos vigentes y se devuelven como binario (`application/pdf`); el cliente los pide con su JWT y los abre como blob. Usan la paleta de la web (`frontend/src/index.css`) y el logo de `backend/src/assets/logo.png`.
+
 ## Etapa D — Diseño de la aplicación móvil (Responsable: Sebastián Flores)
 
 **Alcance:** arquitectura de integración web-móvil, contrato de la API para la aplicación React Native y código base de las pantallas del Sprint 1 móvil (HU2 y HU4).

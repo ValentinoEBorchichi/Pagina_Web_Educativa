@@ -9,4 +9,7 @@ router.get('/', requireAuth(['admin', 'docente', 'padre', 'alumno']), transporte
 // Inscripción al transporte escolar (RF-09). El docente no inscribe alumnos.
 router.post('/inscribir', requireAuth(['admin', 'padre', 'alumno']), transporteController.inscribir);
 
+// Baja del transporte (?alumno_id= para padre/admin; el alumno solo la suya).
+router.delete('/desinscribir', requireAuth(['admin', 'padre', 'alumno']), transporteController.desinscribir);
+
 module.exports = router;
