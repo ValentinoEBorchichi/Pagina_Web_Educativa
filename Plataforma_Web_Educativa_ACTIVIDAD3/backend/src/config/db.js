@@ -1,4 +1,5 @@
 const { Pool } = require('pg');
+const SUPABASE_CA = require('./supabaseCa');
 require('dotenv').config();
 
 // Conexión a PostgreSQL (Supabase) con el driver "pg". Pool único compartido
@@ -26,13 +27,19 @@ if (!process.env.DATABASE_URL) {
     throw new Error('Falta DATABASE_URL en backend/.env (connection string de Supabase/Postgres)');
 }
 
-// Supabase exige TLS con un certificado de una CA pública válida: se valida
-// siempre (ssl: true -> rejectUnauthorized: true, el default de Node). No
-// hay ningún flag para desactivarla: si algún entorno rarísimo lo necesitara,
-// se parchea a mano ahí, nunca como opción disponible en el repo.
+// La verificación del certificado TLS queda siempre activa
+// (rejectUnauthorized no se toca, nunca en false): no hay ningún flag en el
+// repo para desactivarla.
+//
+// El pooler de Supabase (Connection/Transaction pooler) a veces no manda la
+// cadena completa, y Node tira "self-signed certificate in certificate
+// chain" porque no puede completarla con sus CA raíz por defecto. Por eso se
+// le pasa explícitamente la CA de Supabase (./supabaseCa.js, un certificado
+// público descargado del dashboard: Project Settings -> Database -> SSL
+// Configuration -> Download certificate), en vez de desactivar la validación.
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
-    ssl: true,
+    ssl: { ca: SUPABASE_CA },
     max: 10,
     idleTimeoutMillis: 30000
 });
