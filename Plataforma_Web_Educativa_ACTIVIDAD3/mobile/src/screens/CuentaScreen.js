@@ -2,17 +2,20 @@ import { useCallback, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import { ActivityIndicator, ImageBackground, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { apiUrl } from '../config';
+import PlanCuotasFactura from '../components/PlanCuotasFactura';
+import { descargarYAbrirPdf } from '../utils/pdf';
 
 const FONDO_EDUCATIVO = 'https://images.unsplash.com/photo-1509062522246-3755977927d7?w=900&q=80';
 
 export default function CuentaScreen({ route, navigation }) {
   const { alumnoId, token } = route.params;
   const [cuenta, setCuenta] = useState(null);
+  const [planes, setPlanes] = useState([]);
   const [seleccionadas, setSeleccionadas] = useState({});
   const [error, setError] = useState('');
   const [cargando, setCargando] = useState(true);
 
-  useFocusEffect(useCallback(() => {
+  const cargarCuenta = useCallback(() => {
     let vigente = true;
     setCargando(true); setError('');
     fetch(apiUrl('/api/facturas', alumnoId), { headers: { Authorization: `Bearer ${token}` } })
@@ -23,7 +26,22 @@ export default function CuentaScreen({ route, navigation }) {
       }).catch((e) => vigente && setError(e.message))
       .finally(() => vigente && setCargando(false));
     return () => { vigente = false; };
-  }, [alumnoId, token]));
+  }, [alumnoId, token]);
+
+  useFocusEffect(useCallback(() => cargarCuenta(), [cargarCuenta]));
+
+  // Los planes de pago son el mismo catálogo para toda la cuenta: se traen
+  // una sola vez (no por factura).
+  useFocusEffect(useCallback(() => {
+    let vigente = true;
+    fetch(apiUrl('/api/financiero/planes-pago'), { headers: { Authorization: `Bearer ${token}` } })
+      .then(async (res) => {
+        const data = await res.json().catch(() => ([]));
+        if (res.ok && vigente) setPlanes(data.filter((p) => p.activo));
+      })
+      .catch(() => {});
+    return () => { vigente = false; };
+  }, [token]));
 
   const facturas = cuenta?.facturas || [];
   const disponibles = facturas.filter((f) => Number(f.saldo) > 0 && f.estado !== 'Anulada');
@@ -42,7 +60,12 @@ export default function CuentaScreen({ route, navigation }) {
     {facturas.length === 0 ? <Text>No hay facturas registradas.</Text> : facturas.map((factura) => {
       const pagable = Number(factura.saldo) > 0 && factura.estado !== 'Anulada';
       return <View key={factura.id} style={styles.card}>
-        <Text style={styles.titulo}>Factura {factura.id}</Text>
+        <View style={styles.filaTitulo}>
+          <Text style={styles.titulo}>Factura {factura.id}</Text>
+          <Pressable onPress={() => descargarYAbrirPdf(apiUrl('/api/financiero/facturas/pdf', { facturaId: factura.id }), token, `factura_${factura.id}.pdf`)}>
+            <Text style={styles.enlacePdf}>Descargar / Imprimir</Text>
+          </Pressable>
+        </View>
         <Text style={styles.periodo}>{new Date(factura.periodo).toLocaleDateString('es-AR', { month: 'long', year: 'numeric' })}</Text>
         <Text style={styles.estado}>Estado: {factura.estado} · Saldo: ${Number(factura.saldo).toFixed(2)}</Text>
         {(factura.detalles || []).map((detalle) => <View key={detalle.id} style={styles.linea}>
@@ -50,7 +73,9 @@ export default function CuentaScreen({ route, navigation }) {
           {pagable ? <Switch accessibilityLabel={`Seleccionar ${detalle.descripcion}`} value={Boolean(seleccionadas[detalle.id])}
             onValueChange={(valor) => setSeleccionadas((actuales) => ({ ...actuales, [detalle.id]: valor }))} /> : null}
         </View>)}
-          {pagable ? <Pressable style={styles.boton} onPress={() => navigation.navigate('SubirComprobante', { factura, token })}><Text style={styles.botonTexto}>SUBIR COMPROBANTE</Text></Pressable> : null}
+          {pagable ? (
+            <PlanCuotasFactura factura={factura} token={token} planes={planes} navigation={navigation} onCambio={cargarCuenta} />
+          ) : null}
       </View>;
     })}
     <View style={styles.seleccionCard}><Text style={styles.seleccionLabel}>Conceptos seleccionados</Text><Text style={styles.total}>${totalSeleccionado.toFixed(2)}</Text></View>
@@ -66,6 +91,6 @@ const styles = StyleSheet.create({
   container: { padding: 16, gap: 12, backgroundColor: '#f8fafc' }, centro: { flex: 1 },
   encabezado: { height: 150, borderRadius: 18, overflow: 'hidden' }, encabezadoImagen: { borderRadius: 18 }, encabezadoCapa: { flex: 1, justifyContent: 'flex-end', padding: 18, backgroundColor: 'rgba(21,78,138,0.78)' }, encabezadoTitulo: { color: '#fff', fontSize: 24, fontWeight: '800' }, encabezadoSubtitulo: { color: '#dbeafe', marginTop: 5 },
   totalCard: { backgroundColor: '#dbeafe', borderRadius: 14, padding: 16, borderLeftWidth: 5, borderLeftColor: '#1a5fa8' }, totalLabel: { color: '#154e8a', fontWeight: '700' }, total: { color: '#0f172a', fontSize: 22, fontWeight: '800' },
-  card: { padding: 16, borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 14, gap: 8, marginBottom: 2, backgroundColor: '#fff' }, titulo: { color: '#154e8a', fontWeight: '800', fontSize: 17 }, periodo: { color: '#64748b', textTransform: 'capitalize' }, estado: { color: '#334155', fontWeight: '600' }, linea: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8, borderTopWidth: 1, borderTopColor: '#f1f5f9' }, textos: { flex: 1 }, detalle: { color: '#334155', fontWeight: '600' },
+  card: { padding: 16, borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 14, gap: 8, marginBottom: 2, backgroundColor: '#fff' }, filaTitulo: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, titulo: { color: '#154e8a', fontWeight: '800', fontSize: 17 }, enlacePdf: { color: '#7652a8', fontWeight: '700', fontSize: 12 }, periodo: { color: '#64748b', textTransform: 'capitalize' }, estado: { color: '#334155', fontWeight: '600' }, linea: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8, borderTopWidth: 1, borderTopColor: '#f1f5f9' }, textos: { flex: 1 }, detalle: { color: '#334155', fontWeight: '600' },
   seleccionCard: { backgroundColor: '#f3e8ff', borderRadius: 14, padding: 16, borderLeftWidth: 5, borderLeftColor: '#7652a8' }, seleccionLabel: { color: '#5b2f88', fontWeight: '700', marginBottom: 4 }, aviso: { color: '#92400e', backgroundColor: '#fff7ed', padding: 12, borderRadius: 10 }, boton: { minHeight: 46, borderRadius: 10, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12, backgroundColor: '#1a5fa8', marginTop: 4 }, botonTexto: { color: '#fff', fontWeight: '800', fontSize: 13, textAlign: 'center' }, botonDeshabilitado: { opacity: 0.45 }, botonSecundario: { minHeight: 46, borderRadius: 10, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12, backgroundColor: '#fff', borderWidth: 1, borderColor: '#1a5fa8' }, botonSecundarioTexto: { color: '#154e8a', fontWeight: '800', fontSize: 13 }, errorCard: { backgroundColor: '#fff', padding: 18, borderRadius: 14, gap: 12 }, error: { color: '#b91c1c', fontWeight: '600' },
 });

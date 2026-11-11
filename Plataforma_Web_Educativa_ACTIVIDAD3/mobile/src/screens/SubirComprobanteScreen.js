@@ -5,10 +5,13 @@ import { apiUrl } from '../config';
 
 const hoy = () => new Date().toISOString().slice(0, 10);
 
+// Sube el comprobante de una cuota puntual (factura_cuota_id). El parámetro
+// viejo `factura` (pagar una factura entera, sin plan de cuotas) ya no se usa
+// desde que CuentaScreen exige elegir un plan de pago antes de poder pagar.
 export default function SubirComprobanteScreen({ route, navigation }) {
-  const { factura, token } = route.params;
+  const { token, facturaCuotaId, montoSugerido, titulo, subtitulo } = route.params;
   const [imagen, setImagen] = useState(null);
-  const [monto, setMonto] = useState(String(factura.saldo));
+  const [monto, setMonto] = useState(String(montoSugerido ?? ''));
   const [fecha, setFecha] = useState(hoy());
   const [error, setError] = useState('');
   const [enviando, setEnviando] = useState(false);
@@ -42,7 +45,7 @@ export default function SubirComprobanteScreen({ route, navigation }) {
     if (!['image/jpeg', 'image/png'].includes(tipo)) return setError('Elegí una imagen JPG o PNG.');
     const extension = tipo === 'image/png' ? 'png' : 'jpg';
     const datos = new FormData();
-    datos.append('factura_id', String(factura.id));
+    datos.append('factura_cuota_id', String(facturaCuotaId));
     datos.append('monto', String(montoNormalizado));
     datos.append('fecha_transferencia', fecha);
     // Expo puede devolver un objeto de asset que React Native no reconoce como
@@ -76,14 +79,14 @@ export default function SubirComprobanteScreen({ route, navigation }) {
   }
 
   return <View style={styles.container}>
-    <ImageBackground source={{ uri: 'https://images.unsplash.com/photo-1497633762265-9d179a990aa6?w=900&q=80' }} style={styles.encabezado} imageStyle={styles.encabezadoImagen}><View style={styles.encabezadoCapa}><Text style={styles.encabezadoTitulo}>Subir comprobante</Text><Text style={styles.encabezadoSubtitulo}>Factura {factura.id} · saldo ${Number(factura.saldo).toFixed(2)}</Text></View></ImageBackground>
+    <ImageBackground source={{ uri: 'https://images.unsplash.com/photo-1497633762265-9d179a990aa6?w=900&q=80' }} style={styles.encabezado} imageStyle={styles.encabezadoImagen}><View style={styles.encabezadoCapa}><Text style={styles.encabezadoTitulo}>Subir comprobante</Text><Text style={styles.encabezadoSubtitulo}>{titulo}{subtitulo ? ` · ${subtitulo}` : ''}</Text></View></ImageBackground>
     <View style={styles.tarjeta}><Text style={styles.label}>Monto transferido</Text><TextInput accessibilityLabel="Monto transferido" keyboardType="decimal-pad" value={monto} onChangeText={setMonto} style={styles.input} placeholderTextColor="#94a3b8" />
     <Text style={styles.label}>Fecha de transferencia (AAAA-MM-DD)</Text><TextInput accessibilityLabel="Fecha de transferencia" value={fecha} onChangeText={setFecha} style={styles.input} placeholderTextColor="#94a3b8" />
     <Pressable style={styles.botonSecundario} onPress={elegirImagen}><Text style={styles.botonSecundarioTexto}>{imagen ? 'CAMBIAR IMAGEN DEL TICKET' : 'ELEGIR IMAGEN DEL TICKET'}</Text></Pressable>
     {imagen ? <Image source={{ uri: imagen.uri }} style={styles.preview} resizeMode="contain" /> : null}
     {error ? <Text style={styles.error}>{error}</Text> : null}
     {enviando ? <ActivityIndicator color="#1a5fa8" /> : <Pressable style={styles.boton} onPress={enviar}><Text style={styles.botonTexto}>ENVIAR COMPROBANTE</Text></Pressable>}
-    <Text style={styles.nota}>Se aceptan imágenes JPG o PNG de hasta 5 MB. La validación del pago queda pendiente.</Text></View>
+    <Text style={styles.nota}>Se aceptan imágenes JPG o PNG de hasta 5 MB. La validación del pago queda pendiente de que el admin lo apruebe.</Text></View>
   </View>;
 }
 
