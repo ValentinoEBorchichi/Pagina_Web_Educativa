@@ -3,6 +3,8 @@ import React, { useState, useEffect } from 'react';
 import DashboardLayout from '../components/DashboardLayout';
 import { useAuth } from '../context/AuthContext';
 
+const hoy = () => new Date().toISOString().slice(0, 10);
+
 const PadreDashboard = () => {
     const { apiFetch } = useAuth();
     const [showMenu, setShowMenu] = useState(false);
@@ -17,6 +19,13 @@ const PadreDashboard = () => {
     const [deportes, setDeportes] = useState([]);
     const [deporteSel, setDeporteSel] = useState({});   // { [hijoId]: deporteId }
     const [msgDeporte, setMsgDeporte] = useState(null); // { tipo: 'error' | 'ok', texto }
+    const [planesPago, setPlanesPago] = useState([]);
+    const [cuotasPorFactura, setCuotasPorFactura] = useState({}); // { [facturaId]: cuota[] }
+    const [eligiendoPlan, setEligiendoPlan] = useState(null); // `${facturaId}-${planId}` en curso
+    const [cuotaSubiendo, setCuotaSubiendo] = useState(null); // cuota_id con el formulario de carga abierto
+    const [uploadForm, setUploadForm] = useState({ monto: '', fecha: hoy(), archivo: null });
+    const [uploadError, setUploadError] = useState('');
+    const [subiendoArchivo, setSubiendoArchivo] = useState(false);
 
     useEffect(() => {
         fetchDeportes();
@@ -25,7 +34,14 @@ const PadreDashboard = () => {
         fetchDisponibles();
         fetchFacturas();
         fetchComprobantes();
+        fetchPlanesPago();
     }, []);
+
+    // Las facturas con plan ya elegido necesitan sus cuotas para mostrar el
+    // botón "Subir comprobante" por cuota pendiente.
+    useEffect(() => {
+        facturas.filter(f => f.plan_pago_id).forEach(f => fetchCuotasFactura(f.id));
+    }, [facturas]);
 
     // Facturas y comprobantes de los propios hijos: el backend ya los filtra
     // por el padre autenticado (RNFM-02: una sola fuente de verdad, sin "pagos" sueltos).
@@ -57,6 +73,106 @@ const PadreDashboard = () => {
         } catch (error) {
             console.error(error);
             alert('Error al abrir el comprobante');
+        }
+    };
+
+    // Catálogo de planes de pago activos (mismo para todas las facturas).
+    const fetchPlanesPago = async () => {
+        try {
+            const response = await apiFetch(`${API_URL}/api/financiero/planes-pago`);
+            if (response.ok) {
+                const data = await response.json();
+                setPlanesPago(data.filter(p => p.activo));
+            }
+        } catch (error) {
+            console.error(error);
+        }
+    };
+
+    // Cuotas generadas de una factura que ya tiene plan de pago elegido.
+    const fetchCuotasFactura = async (facturaId) => {
+        try {
+            const response = await apiFetch(`${API_URL}/api/financiero/facturas/${facturaId}/cuotas`);
+            if (response.ok) {
+                const data = await response.json();
+                setCuotasPorFactura(prev => ({ ...prev, [facturaId]: data }));
+            }
+        } catch (error) {
+            console.error(error);
+        }
+    };
+
+    // El padre elige un plan para una factura con saldo: el backend genera las cuotas.
+    const elegirPlan = async (facturaId, planPagoId) => {
+        setEligiendoPlan(`${facturaId}-${planPagoId}`);
+        try {
+            const response = await apiFetch(`${API_URL}/api/financiero/facturas/${facturaId}/elegir-plan`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ plan_pago_id: planPagoId })
+            });
+            const data = await response.json().catch(() => ({}));
+            if (response.ok) {
+                fetchFacturas(); // trae el plan_pago_id ya asignado; el useEffect de arriba carga las cuotas
+            } else {
+                alert(data.message || 'No se pudo elegir el plan de pago.');
+            }
+        } catch (error) {
+            console.error(error);
+            alert('Error de conexión con el servidor');
+        } finally {
+            setEligiendoPlan(null);
+        }
+    };
+
+    const abrirSubirComprobante = (cuota) => {
+        setUploadError('');
+        setUploadForm({ monto: String(cuota.monto), fecha: hoy(), archivo: null });
+        setCuotaSubiendo(cuota.id);
+    };
+
+    const cerrarSubirComprobante = () => {
+        setCuotaSubiendo(null);
+        setUploadError('');
+    };
+
+    // Sube el comprobante de una cuota puntual (factura_cuota_id). Reutiliza el
+    // mismo endpoint POST /api/financiero/comprobantes que el admin ya consume
+    // para revisión, agregando el campo factura_cuota_id.
+    const enviarComprobante = async (facturaId) => {
+        const montoNormalizado = Number(String(uploadForm.monto).replace(',', '.'));
+        if (!Number.isFinite(montoNormalizado) || montoNormalizado <= 0) {
+            return setUploadError('Ingresá un monto válido.');
+        }
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(uploadForm.fecha)) {
+            return setUploadError('Ingresá una fecha válida con formato AAAA-MM-DD.');
+        }
+        if (!uploadForm.archivo) {
+            return setUploadError('Elegí el archivo del comprobante (JPG, PNG o PDF).');
+        }
+
+        const datos = new FormData();
+        datos.append('factura_cuota_id', String(cuotaSubiendo));
+        datos.append('monto', String(montoNormalizado));
+        datos.append('fecha_transferencia', uploadForm.fecha);
+        datos.append('archivo', uploadForm.archivo);
+
+        setSubiendoArchivo(true);
+        setUploadError('');
+        try {
+            const response = await apiFetch(`${API_URL}/api/financiero/comprobantes`, {
+                method: 'POST',
+                body: datos
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(data.message || 'No se pudo cargar el comprobante.');
+            cerrarSubirComprobante();
+            fetchCuotasFactura(facturaId);
+            fetchComprobantes();
+        } catch (error) {
+            setUploadError(error.message || 'Error de conexión con el servidor');
+        } finally {
+            setSubiendoArchivo(false);
         }
     };
 
@@ -521,13 +637,103 @@ const PadreDashboard = () => {
                                 </p>
                             ) : (
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px' }}>
-                                    {facturas.map(f => (
-                                        <div key={f.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.82rem', padding: '8px 0', borderBottom: '1px solid #f1f5f9' }}>
-                                            <span>
-                                                {f.periodo} · {f.alumno_apellido}, {f.alumno_nombre} · {f.estado} · <strong>${Number(f.saldo).toFixed(2)}</strong> / ${Number(f.total).toFixed(2)}
-                                            </span>
-                                        </div>
-                                    ))}
+                                    {facturas.map(f => {
+                                        const pagable = Number(f.saldo) > 0 && f.estado !== 'Anulada';
+                                        const cuotas = cuotasPorFactura[f.id];
+                                        return (
+                                            <div key={f.id} style={facturaCard}>
+                                                <span style={{ fontSize: '0.82rem' }}>
+                                                    {f.periodo} · {f.alumno_apellido}, {f.alumno_nombre} · {f.estado} · <strong>${Number(f.saldo).toFixed(2)}</strong> / ${Number(f.total).toFixed(2)}
+                                                </span>
+
+                                                {!pagable ? null : !f.plan_pago_id ? (
+                                                    <div style={{ marginTop: '10px', borderTop: '1px solid #f1f5f9', paddingTop: '10px' }}>
+                                                        <span style={{ ...labelStyle, fontSize: '0.65rem' }}>Elegí un plan de pago</span>
+                                                        {planesPago.length === 0 ? (
+                                                            <p style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '6px', fontStyle: 'italic' }}>
+                                                                No hay planes de pago configurados todavía.
+                                                            </p>
+                                                        ) : planesPago.map(plan => {
+                                                            const totalConRecargo = Number(f.saldo) * (1 + Number(plan.recargo_pct || 0) / 100);
+                                                            const porCuota = totalConRecargo / plan.cantidad_cuotas;
+                                                            const key = `${f.id}-${plan.id}`;
+                                                            return (
+                                                                <div key={plan.id} style={planCard}>
+                                                                    <div>
+                                                                        <strong style={{ fontSize: '0.82rem', color: 'var(--blue)' }}>{plan.nombre}</strong>
+                                                                        <p style={{ fontSize: '0.75rem', color: '#64748b', margin: '2px 0' }}>
+                                                                            {plan.cantidad_cuotas} cuota{plan.cantidad_cuotas > 1 ? 's' : ''} de ${porCuota.toFixed(2)}
+                                                                            {Number(plan.recargo_pct) > 0 ? ` · recargo ${plan.recargo_pct}%` : ' · sin recargo'} · total ${totalConRecargo.toFixed(2)}
+                                                                        </p>
+                                                                    </div>
+                                                                    <button
+                                                                        onClick={() => elegirPlan(f.id, plan.id)}
+                                                                        disabled={eligiendoPlan === key}
+                                                                        className="btn btn-violet"
+                                                                        style={{ fontSize: '0.75rem', whiteSpace: 'nowrap' }}
+                                                                    >{eligiendoPlan === key ? 'Elegiendo...' : 'Elegir'}</button>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                ) : (
+                                                    <div style={{ marginTop: '10px', borderTop: '1px solid #f1f5f9', paddingTop: '10px' }}>
+                                                        <span style={{ ...labelStyle, fontSize: '0.65rem' }}>Cuotas</span>
+                                                        {!cuotas ? (
+                                                            <p style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '6px' }}>Cargando cuotas...</p>
+                                                        ) : cuotas.map(cuota => (
+                                                            <div key={cuota.id} style={cuotaFila}>
+                                                                <span style={{ fontSize: '0.78rem' }}>
+                                                                    Cuota {cuota.numero_cuota}/{cuotas.length} · ${Number(cuota.monto).toFixed(2)} · vence {cuota.vencimiento} · <strong>{cuota.estado}</strong>
+                                                                </span>
+                                                                {cuota.estado === 'Pendiente' && (
+                                                                    <button
+                                                                        onClick={() => abrirSubirComprobante(cuota)}
+                                                                        className="btn btn-hero-outline"
+                                                                        style={{ fontSize: '0.72rem', color: 'var(--blue)', borderColor: 'var(--blue)', whiteSpace: 'nowrap' }}
+                                                                    >Subir comprobante</button>
+                                                                )}
+                                                            </div>
+                                                        ))}
+
+                                                        {cuotas && cuotas.some(c => c.id === cuotaSubiendo) && (
+                                                            <div style={uploadBox}>
+                                                                <span style={labelStyle}>Subir comprobante de la cuota</span>
+                                                                <label style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '8px', display: 'block' }}>Monto transferido</label>
+                                                                <input
+                                                                    type="number" step="0.01" value={uploadForm.monto}
+                                                                    onChange={e => setUploadForm(prev => ({ ...prev, monto: e.target.value }))}
+                                                                    style={inputStyle}
+                                                                />
+                                                                <label style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '8px', display: 'block' }}>Fecha de transferencia</label>
+                                                                <input
+                                                                    type="date" value={uploadForm.fecha}
+                                                                    onChange={e => setUploadForm(prev => ({ ...prev, fecha: e.target.value }))}
+                                                                    style={inputStyle}
+                                                                />
+                                                                <label style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '8px', display: 'block' }}>Archivo (JPG, PNG o PDF)</label>
+                                                                <input
+                                                                    type="file" accept="image/jpeg,image/png,application/pdf"
+                                                                    onChange={e => setUploadForm(prev => ({ ...prev, archivo: e.target.files[0] || null }))}
+                                                                    style={{ marginTop: '4px', fontSize: '0.78rem' }}
+                                                                />
+                                                                {uploadError && <p style={{ color: '#dc2626', fontSize: '0.78rem', marginTop: '8px' }}>{uploadError}</p>}
+                                                                <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+                                                                    <button onClick={() => enviarComprobante(f.id)} disabled={subiendoArchivo} className="btn btn-violet" style={{ fontSize: '0.78rem' }}>
+                                                                        {subiendoArchivo ? 'Enviando...' : 'Enviar comprobante'}
+                                                                    </button>
+                                                                    <button onClick={cerrarSubirComprobante} className="btn btn-hero-outline" style={{ fontSize: '0.78rem' }}>Cancelar</button>
+                                                                </div>
+                                                                <p style={{ fontSize: '0.7rem', color: '#64748b', marginTop: '8px' }}>
+                                                                    El pago se acredita una vez que administración valide la transferencia.
+                                                                </p>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
                                 </div>
                             )}
                         </div>
@@ -585,5 +791,11 @@ const infoBox = { display: 'flex', flexDirection: 'column', background: 'white',
 const labelStyle = { fontSize: '0.7rem', textTransform: 'uppercase', color: '#64748b', fontWeight: 800 };
 const valueStyle = { fontSize: '1rem', fontWeight: 800 };
 const avisoStyle = { padding: '12px', borderLeft: '4px solid var(--orange)', background: '#fff7ed', marginBottom: '12px', borderRadius: '0 8px 8px 0' };
+
+const facturaCard = { padding: '10px 0', borderBottom: '1px solid #f1f5f9' };
+const planCard = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', background: '#f8fafc', borderRadius: '10px', padding: '10px', marginTop: '8px', border: '1px solid #e2e8f0' };
+const cuotaFila = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', padding: '8px 0', borderBottom: '1px solid #f8fafc' };
+const uploadBox = { marginTop: '12px', padding: '14px', background: '#f0f9ff', borderRadius: '10px', border: '1px solid #bae6fd' };
+const inputStyle = { width: '100%', padding: '9px 10px', borderRadius: '8px', border: '2px solid #e2e8f0', fontSize: '0.82rem', marginTop: '4px', boxSizing: 'border-box' };
 
 export default PadreDashboard;

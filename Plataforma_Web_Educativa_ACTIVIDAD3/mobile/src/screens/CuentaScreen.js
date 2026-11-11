@@ -2,17 +2,19 @@ import { useCallback, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import { ActivityIndicator, ImageBackground, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { apiUrl } from '../config';
+import PlanCuotasFactura from '../components/PlanCuotasFactura';
 
 const FONDO_EDUCATIVO = 'https://images.unsplash.com/photo-1509062522246-3755977927d7?w=900&q=80';
 
 export default function CuentaScreen({ route, navigation }) {
   const { alumnoId, token } = route.params;
   const [cuenta, setCuenta] = useState(null);
+  const [planes, setPlanes] = useState([]);
   const [seleccionadas, setSeleccionadas] = useState({});
   const [error, setError] = useState('');
   const [cargando, setCargando] = useState(true);
 
-  useFocusEffect(useCallback(() => {
+  const cargarCuenta = useCallback(() => {
     let vigente = true;
     setCargando(true); setError('');
     fetch(apiUrl('/api/facturas', alumnoId), { headers: { Authorization: `Bearer ${token}` } })
@@ -23,7 +25,22 @@ export default function CuentaScreen({ route, navigation }) {
       }).catch((e) => vigente && setError(e.message))
       .finally(() => vigente && setCargando(false));
     return () => { vigente = false; };
-  }, [alumnoId, token]));
+  }, [alumnoId, token]);
+
+  useFocusEffect(useCallback(() => cargarCuenta(), [cargarCuenta]));
+
+  // Los planes de pago son el mismo catálogo para toda la cuenta: se traen
+  // una sola vez (no por factura).
+  useFocusEffect(useCallback(() => {
+    let vigente = true;
+    fetch(apiUrl('/api/financiero/planes-pago'), { headers: { Authorization: `Bearer ${token}` } })
+      .then(async (res) => {
+        const data = await res.json().catch(() => ([]));
+        if (res.ok && vigente) setPlanes(data.filter((p) => p.activo));
+      })
+      .catch(() => {});
+    return () => { vigente = false; };
+  }, [token]));
 
   const facturas = cuenta?.facturas || [];
   const disponibles = facturas.filter((f) => Number(f.saldo) > 0 && f.estado !== 'Anulada');
@@ -50,7 +67,9 @@ export default function CuentaScreen({ route, navigation }) {
           {pagable ? <Switch accessibilityLabel={`Seleccionar ${detalle.descripcion}`} value={Boolean(seleccionadas[detalle.id])}
             onValueChange={(valor) => setSeleccionadas((actuales) => ({ ...actuales, [detalle.id]: valor }))} /> : null}
         </View>)}
-          {pagable ? <Pressable style={styles.boton} onPress={() => navigation.navigate('SubirComprobante', { factura, token })}><Text style={styles.botonTexto}>SUBIR COMPROBANTE</Text></Pressable> : null}
+          {pagable ? (
+            <PlanCuotasFactura factura={factura} token={token} planes={planes} navigation={navigation} onCambio={cargarCuenta} />
+          ) : null}
       </View>;
     })}
     <View style={styles.seleccionCard}><Text style={styles.seleccionLabel}>Conceptos seleccionados</Text><Text style={styles.total}>${totalSeleccionado.toFixed(2)}</Text></View>

@@ -27,6 +27,7 @@ const AdminDashboard = () => {
 
     const [rutasTransporte, setRutasTransporte] = useState([]);
     const [tarifas, setTarifas] = useState([]);
+    const [planesPago, setPlanesPago] = useState([]);
     const [deportesTarifa, setDeportesTarifa] = useState([]);
     const [transportesTarifa, setTransportesTarifa] = useState([]);
     const [facturas, setFacturas] = useState([]);
@@ -56,7 +57,7 @@ const AdminDashboard = () => {
         }
         if (activeTab === 'personal') fetchPersonal();
         if (activeTab === 'finanzas') {
-            fetchTarifas(); fetchDeportesTarifa(); fetchTransportesTarifa(); fetchAlumnos();
+            fetchTarifas(); fetchPlanesPago(); fetchDeportesTarifa(); fetchTransportesTarifa(); fetchAlumnos();
             fetchFacturas(); fetchComprobantes();
         }
         if (activeTab === 'servicios') { fetchServicios(); fetchAlumnos(); }
@@ -397,6 +398,13 @@ const AdminDashboard = () => {
             const response = await apiFetch(`${API_URL}/api/transporte`);
             if (response.ok) setTransportesTarifa(await response.json());
         } catch (error) { console.error('Error transportes:', error); }
+    };
+
+    const fetchPlanesPago = async () => {
+        try {
+            const response = await apiFetch(`${API_URL}/api/financiero/planes-pago`);
+            if (response.ok) setPlanesPago(await response.json());
+        } catch (error) { console.error('Error planes de pago:', error); }
     };
 
     const fetchFacturas = async () => {
@@ -811,6 +819,33 @@ const AdminDashboard = () => {
         try {
             const response = await apiFetch(`${API_URL}/api/financiero/tarifas/${id}`, { method: 'DELETE' });
             if (response.ok) fetchTarifas();
+        } catch (error) { console.error(error); }
+    };
+
+    const handlePlanPagoSubmit = async (e) => {
+        e.preventDefault();
+        const form = e.target;
+        const planData = {
+            nombre: form.nombre.value.trim(),
+            cantidad_cuotas: parseInt(form.cantidad_cuotas.value),
+            recargo_pct: form.recargo_pct.value || 0
+        };
+        try {
+            const response = await apiFetch(`${API_URL}/api/financiero/planes-pago`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(planData)
+            });
+            if (response.ok) { form.reset(); fetchPlanesPago(); }
+            else { const errorBody = await response.json().catch(() => ({})); alert(errorBody.message || 'Error al guardar el plan de pago'); }
+        } catch (error) { console.error(error); }
+    };
+
+    const deletePlanPago = async (id) => {
+        if (!window.confirm('¿Desactivar este plan de pago?')) return;
+        try {
+            const response = await apiFetch(`${API_URL}/api/financiero/planes-pago/${id}`, { method: 'DELETE' });
+            if (response.ok) fetchPlanesPago();
         } catch (error) { console.error(error); }
     };
 
@@ -1366,6 +1401,7 @@ const AdminDashboard = () => {
 
             {activeTab === 'finanzas' && (
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
                     <div style={{ background: 'var(--white)', padding: '24px', borderRadius: 'var(--radius)', boxShadow: 'var(--shadow-sm)' }}>
                         <h2 style={{ fontSize: '1.25rem', color: 'var(--blue)', fontWeight: 800, marginBottom: '24px' }}>Establecer Tarifas</h2>
                         <form onSubmit={handleTarifaSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -1435,6 +1471,54 @@ const AdminDashboard = () => {
                             </tbody>
                         </table>
                     </div>
+
+                    <div style={{ background: 'var(--white)', padding: '24px', borderRadius: 'var(--radius)', boxShadow: 'var(--shadow-sm)' }}>
+                        <h2 style={{ fontSize: '1.25rem', color: 'var(--blue)', fontWeight: 800, marginBottom: '24px' }}>Planes de Pago (cuotas)</h2>
+                        <form onSubmit={handlePlanPagoSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                            <div>
+                                <label style={labelStyle}>Nombre</label>
+                                <input type="text" name="nombre" placeholder="Ej: 3 cuotas" required style={inputStyle} />
+                            </div>
+                            <div>
+                                <label style={labelStyle}>Cantidad de cuotas</label>
+                                <input type="number" name="cantidad_cuotas" min="1" max="24" placeholder="Ej: 3" required style={inputStyle} />
+                            </div>
+                            <div>
+                                <label style={labelStyle}>Recargo (%)</label>
+                                <input type="number" name="recargo_pct" min="0" step="0.01" defaultValue="0" style={inputStyle} />
+                            </div>
+                            <button type="submit" className="btn btn-hero-orange" style={{ padding: '14px', color: 'white' }}>Guardar Plan</button>
+                        </form>
+
+                        <h3 style={{ fontSize: '1.05rem', color: 'var(--blue)', fontWeight: 800, margin: '32px 0 16px' }}>Planes vigentes</h3>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                            <thead>
+                                <tr style={{ borderBottom: '2px solid #f1f5f9' }}>
+                                    <th style={thStyle}>Nombre</th>
+                                    <th style={thStyle}>Cuotas</th>
+                                    <th style={thStyle}>Recargo</th>
+                                    <th style={thStyle}>Acción</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {planesPago.length === 0 ? (
+                                    <tr><td colSpan="4" style={{ textAlign: 'center', padding: '20px' }}>No hay planes de pago configurados.</td></tr>
+                                ) : (
+                                    planesPago.map(p => (
+                                        <tr key={p.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                                            <td style={tdStyle}>{p.nombre}</td>
+                                            <td style={tdStyle}>{p.cantidad_cuotas}</td>
+                                            <td style={tdStyle}>{Number(p.recargo_pct) > 0 ? `${p.recargo_pct}%` : 'Sin recargo'}</td>
+                                            <td style={tdStyle}>
+                                                {p.activo && <button onClick={() => deletePlanPago(p.id)} style={{ background: 'none', border: 'none', color: '#dc2626', fontWeight: 700, cursor: 'pointer' }}>Desactivar</button>}
+                                            </td>
+                                        </tr>
+                                    ))
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                  </div>
 
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
                         <div style={{ background: 'var(--white)', padding: '24px', borderRadius: 'var(--radius)', boxShadow: 'var(--shadow-sm)' }}>
@@ -1507,6 +1591,7 @@ const AdminDashboard = () => {
                                     <tr style={{ borderBottom: '2px solid #f1f5f9' }}>
                                         <th style={thStyle}>Alumno</th>
                                         <th style={thStyle}>Período</th>
+                                        <th style={thStyle}>Cuota</th>
                                         <th style={thStyle}>Monto</th>
                                         <th style={thStyle}>Cargado</th>
                                         <th style={thStyle}>Acción</th>
@@ -1514,12 +1599,13 @@ const AdminDashboard = () => {
                                 </thead>
                                 <tbody>
                                     {comprobantes.length === 0 ? (
-                                        <tr><td colSpan="5" style={{ textAlign: 'center', padding: '20px' }}>No hay comprobantes para mostrar.</td></tr>
+                                        <tr><td colSpan="6" style={{ textAlign: 'center', padding: '20px' }}>No hay comprobantes para mostrar.</td></tr>
                                     ) : (
                                         comprobantes.map(c => (
                                             <tr key={c.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
                                                 <td style={tdStyle}>{c.alumno_apellido}, {c.alumno_nombre}</td>
                                                 <td style={tdStyle}>{c.periodo}</td>
+                                                <td style={tdStyle}>{c.numero_cuota ? `Cuota ${c.numero_cuota}${c.cantidad_cuotas ? `/${c.cantidad_cuotas}` : ''}` : 'Pago directo'}</td>
                                                 <td style={tdStyle}><strong>${Number(c.monto).toFixed(2)}</strong></td>
                                                 <td style={tdStyle}>{new Date(c.fecha_carga).toLocaleDateString('es-AR')}</td>
                                                 <td style={tdStyle}>
