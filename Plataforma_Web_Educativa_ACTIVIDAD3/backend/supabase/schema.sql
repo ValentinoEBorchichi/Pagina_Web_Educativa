@@ -5,7 +5,8 @@
    sola fuente de verdad (RNFM-02). No hay tablas "_legacy": usuarios y
    alumnos están fusionados; el módulo financiero conserva solo el esquema
    nuevo (tarifa_concepto/factura/factura_detalle/comprobante_transferencia/
-   saldos); el módulo académico/operativo (niveles, aulas, cursos, materias,
+   saldos, más los planes de pago en cuotas plan_pago/factura_cuota: ver
+   migracion_cuotas.sql); el módulo académico/operativo (niveles, aulas, cursos, materias,
    docentes, horarios, asistencias, calificaciones, comunicación, servicios,
    actividades extracurriculares, preinscripciones) viene del esquema SQLite,
    con sus columnas calculadas/constraints trasladadas donde correspondía.
@@ -433,6 +434,16 @@ CREATE TABLE tarifa_concepto (
     CONSTRAINT ck_tarifa_concepto_monto CHECK (monto > 0)
 );
 
+CREATE TABLE plan_pago (
+    id               INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    nombre           VARCHAR(50)   NOT NULL UNIQUE,
+    cantidad_cuotas  SMALLINT      NOT NULL,
+    recargo_pct      DECIMAL(5,2)  NOT NULL DEFAULT 0,
+    activo           BOOLEAN       NOT NULL DEFAULT TRUE,
+    CONSTRAINT ck_plan_pago_cuotas CHECK (cantidad_cuotas BETWEEN 1 AND 24),
+    CONSTRAINT ck_plan_pago_recargo CHECK (recargo_pct >= 0)
+);
+
 CREATE TABLE factura (
     id                  INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     alumno_id           INTEGER       NOT NULL REFERENCES alumnos (id),
@@ -443,6 +454,7 @@ CREATE TABLE factura (
     total               DECIMAL(12,2) NOT NULL DEFAULT 0,
     saldo               DECIMAL(12,2) NOT NULL DEFAULT 0,
     observaciones       VARCHAR(500)  NULL,
+    plan_pago_id        INTEGER       NULL REFERENCES plan_pago (id),  -- plan de cuotas elegido (NULL = sin plan)
     CONSTRAINT uq_factura_alumno_periodo UNIQUE (alumno_id, periodo),
     CONSTRAINT ck_factura_estado CHECK (estado IN ('Pendiente', 'Pago parcial', 'Pagada', 'Vencida', 'Anulada')),
     CONSTRAINT ck_factura_total CHECK (total >= 0),
@@ -482,6 +494,24 @@ CREATE TABLE comprobante_transferencia (
     CONSTRAINT ck_comprobante_estado CHECK (estado_verificacion IN ('Pendiente', 'Aprobado', 'Rechazado'))
 );
 
+CREATE TABLE factura_cuota (
+    id                            INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    factura_id                    INTEGER       NOT NULL REFERENCES factura (id) ON DELETE CASCADE,
+    plan_pago_id                  INTEGER       NOT NULL REFERENCES plan_pago (id),
+    numero_cuota                  SMALLINT      NOT NULL,
+    monto                         DECIMAL(12,2) NOT NULL,
+    vencimiento                   DATE          NOT NULL,
+    estado                        VARCHAR(20)   NOT NULL DEFAULT 'Pendiente',
+    comprobante_transferencia_id  INTEGER       NULL REFERENCES comprobante_transferencia (id),
+    CONSTRAINT uq_factura_cuota_numero UNIQUE (factura_id, numero_cuota),
+    CONSTRAINT uq_factura_cuota_comprobante UNIQUE (comprobante_transferencia_id),
+    CONSTRAINT ck_factura_cuota_estado CHECK (estado IN ('Pendiente', 'Pagada', 'Vencida', 'Anulada')),
+    CONSTRAINT ck_factura_cuota_monto CHECK (monto > 0)
+);
+
+CREATE INDEX ix_factura_plan_pago_id ON factura (plan_pago_id);
+CREATE INDEX ix_factura_cuota_factura_id ON factura_cuota (factura_id);
+
 CREATE TABLE saldos (
     alumno_id             INTEGER       PRIMARY KEY REFERENCES alumnos (id) ON DELETE CASCADE,
     saldo_pendiente       DECIMAL(10,2) NOT NULL DEFAULT 0,
@@ -517,5 +547,15 @@ INSERT INTO transportes (numero_recorrido, nombre, capacidad) VALUES
     (2, 'Recorrido Sur',   30),
     (3, 'Recorrido Este',  30),
     (4, 'Recorrido Oeste', 30);
+
+-- =============================================================================
+-- Planes de pago iniciales (editables/desactivables por el admin desde la web).
+-- Mismo contenido que migracion_cuotas.sql.
+-- =============================================================================
+
+INSERT INTO plan_pago (nombre, cantidad_cuotas, recargo_pct) VALUES
+    ('Pago único', 1, 0),
+    ('3 cuotas',   3, 5),
+    ('6 cuotas',   6, 10);
 
 COMMIT;

@@ -28,13 +28,14 @@ const error = (res, status, codigo, message, extra = {}) =>
 
 const esIdValido = (valor) => Number.isInteger(valor) && valor > 0;
 
-// Devuelve el legajo sobre el que se inscribe, o responde el error y devuelve null.
-// - alumno: solo puede inscribirse a sí mismo (su cuenta está en alumnos.usuario_id).
-// - padre:  solo a sus hijos (RF-02).
-// - admin:  a cualquier alumno.
-async function resolverAlumno(pool, req, res) {
+// Devuelve el legajo sobre el que se opera, o responde el error y devuelve null.
+// - alumno: solo puede operar sobre sí mismo (su cuenta está en alumnos.usuario_id).
+// - padre:  solo sobre sus hijos (RF-02).
+// - admin:  sobre cualquier alumno.
+// `pedido` es el alumno_id que mandó el cliente (en el body al inscribir, en el
+// query al dar de baja); `baja` solo cambia el texto de los mensajes de error.
+async function resolverAlumno(pool, req, res, { pedido = req.body.alumno_id, baja = false } = {}) {
     const { id: usuarioId, rol } = req.user;
-    const pedido = req.body.alumno_id;
 
     if (rol === 'alumno') {
         const { rows } = await pool.query(
@@ -47,7 +48,7 @@ async function resolverAlumno(pool, req, res) {
             return null;
         }
         if (pedido != null && pedido !== '' && Number(pedido) !== alumno.id) {
-            error(res, 403, 'SIN_PERMISO', 'Solo podés inscribirte a vos mismo');
+            error(res, 403, 'SIN_PERMISO', baja ? 'Solo podés darte de baja a vos mismo' : 'Solo podés inscribirte a vos mismo');
             return null;
         }
         return alumno;
@@ -65,7 +66,7 @@ async function resolverAlumno(pool, req, res) {
         return null;
     }
     if (rol === 'padre' && alumno.padre_id !== usuarioId) {
-        error(res, 403, 'SIN_PERMISO', 'Solo podés inscribir a tus hijos');
+        error(res, 403, 'SIN_PERMISO', baja ? 'Solo podés dar de baja a tus hijos' : 'Solo podés inscribir a tus hijos');
         return null;
     }
     return alumno;
@@ -196,8 +197,12 @@ exports.misInscripciones = async (req, res) => {
     }
 };
 
-// DELETE /api/deportes/desinscribir/:deporte_id
-// Un alumno solo puede cancelar sus propias inscripciones.
+// DELETE /api/deportes/desinscribir/:deporte_id?alumno_id=
+// - alumno: da de baja sus propias inscripciones (alumno_id es opcional; si
+//   viene, tiene que ser el suyo).
+// - padre:  solo las de sus hijos (alumno_id obligatorio).
+// - admin:  las de cualquier alumno (alumno_id obligatorio).
+// alumno_id viaja en el query porque un DELETE no lleva body de forma confiable.
 exports.desinscribir = async (req, res) => {
     const deporteId = Number(req.params.deporte_id);
     if (!esIdValido(deporteId)) {
@@ -206,18 +211,26 @@ exports.desinscribir = async (req, res) => {
 
     try {
         const pool = await getPool();
-        const { rowCount } = await pool.query(
-            `DELETE FROM inscripciones_deportes
-             WHERE alumno_id = (SELECT id FROM alumnos WHERE usuario_id = $1)
-               AND deporte_id = $2`,
-            [req.user.id, deporteId]
+
+        const alumno = await resolverAlumno(pool, req, res, { pedido: req.query.alumno_id, baja: true });
+        if (!alumno) return;
+
+        const { rows } = await pool.query(
+            `DELETE FROM inscripciones_deportes i
+             USING deportes d
+             WHERE i.deporte_id = d.id AND i.alumno_id = $1 AND i.deporte_id = $2
+             RETURNING d.nombre`,
+            [alumno.id, deporteId]
         );
 
-        if (!rowCount) {
-            return error(res, 404, 'INSCRIPCION_NO_ENCONTRADA', 'No estás inscripto en ese deporte');
+        if (!rows.length) {
+            return error(res, 404, 'INSCRIPCION_NO_ENCONTRADA', `${alumno.nombre} no está inscripto en ese deporte`);
         }
 
-        res.json({ message: 'Te diste de baja del deporte correctamente' });
+        res.json({
+            message: `Baja confirmada: ${alumno.nombre} ya no está inscripto en ${rows[0].nombre}`,
+            baja: { alumno_id: alumno.id, deporte_id: deporteId, deporte: rows[0].nombre }
+        });
     } catch (err) {
         manejarErrorPg(res, err);
     }

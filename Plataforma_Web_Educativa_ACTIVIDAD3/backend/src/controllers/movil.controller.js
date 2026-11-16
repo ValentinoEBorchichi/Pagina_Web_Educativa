@@ -84,7 +84,7 @@ exports.getEstadoCuentaAlumno = async (req, res) => {
         const pool = await getPool();
         const result = await pool.query(
             `SELECT f.id AS factura_id, f.periodo, f.fecha_emision, f.fecha_vencimiento,
-                    f.estado, f.total, f.saldo,
+                    f.estado, f.total, f.saldo, f.plan_pago_id,
                     d.id AS detalle_id, d.descripcion, d.cantidad, d.importe_unitario, d.subtotal,
                     tc.tipo_servicio
              FROM factura f
@@ -107,7 +107,7 @@ exports.getEstadoCuentaAlumno = async (req, res) => {
             if (!facturas.has(row.factura_id)) facturas.set(row.factura_id, {
                 id: row.factura_id, periodo: row.periodo, fecha_emision: row.fecha_emision,
                 fecha_vencimiento: row.fecha_vencimiento, estado: row.estado, total: row.total,
-                saldo: row.saldo, detalles: []
+                saldo: row.saldo, plan_pago_id: row.plan_pago_id, detalles: []
             });
             if (row.detalle_id) facturas.get(row.factura_id).detalles.push({
                 id: row.detalle_id, descripcion: row.descripcion, tipo_servicio: row.tipo_servicio,

@@ -219,8 +219,11 @@ async function generarFacturasDelPeriodo(fecha = new Date()) {
                 id: facturaId,
                 alumno_id: alumno.id,
                 periodo,
+                fecha_emision: fechaLocal(fecha),
+                fecha_vencimiento: vencimiento,
                 estado: 'Pendiente',
-                total
+                total,
+                saldo: total
             };
             try {
                 const pdf = await generarFacturaPDF(facturaParaPdf, conceptos, datosAlumnoRows[0]);
