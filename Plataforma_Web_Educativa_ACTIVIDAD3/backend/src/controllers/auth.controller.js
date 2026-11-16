@@ -111,7 +111,7 @@ exports.login = async (req, res) => {
                     CASE WHEN u.rol = 'padre' THEN u.id ELSE NULL END AS padre_id
              FROM usuarios u
              LEFT JOIN alumnos a ON a.usuario_id = u.id
-             WHERE u.username = $1 OR a.dni = $1`,
+             WHERE u.username = $1 OR u.email = $1 OR a.dni = $1`,
             [dni]
         );
         const user = rows[0];

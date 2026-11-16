@@ -19,8 +19,9 @@ export default function LoginScreen({ navigation, onLogin }) {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username: dni.trim(), password }),
       });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.message || 'No se pudo iniciar sesión.');
+      const data = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(data?.message || 'No se pudo conectar con el servidor. Probá de nuevo en unos segundos.');
+      if (!data) throw new Error('No se pudo conectar con el servidor. Probá de nuevo en unos segundos.');
       if (data.user?.rol !== 'padre') throw new Error('El acceso móvil está disponible para cuentas de padre. Usá el usuario o correo de tu cuenta.');
       await onLogin(data.token);
     } catch (e) {

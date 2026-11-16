@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
-import { ActivityIndicator, FlatList, ImageBackground, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, FlatList, ImageBackground, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { apiUrl } from '../config';
 import { descargarYAbrirPdf } from '../utils/pdf';
@@ -66,13 +66,26 @@ export function HistorialScreen({ route }) {
 }
 
 export function ComprobanteProvisorioScreen({ route }) {
-  const { conceptos = [], total = 0 } = route.params || {};
-  return <View style={styles.container}>
-    <ImageBackground source={{ uri: 'https://images.unsplash.com/photo-1509062522246-3755977927d7?w=900&q=80' }} style={styles.encabezado} imageStyle={styles.encabezadoImagen}><View style={styles.encabezadoCapa}><Text style={styles.encabezadoTitulo}>Comprobante provisorio</Text><Text style={styles.encabezadoSubtitulo}>Detalle para presentar al área administrativa</Text></View></ImageBackground>
-    <View style={styles.resumenCard}>{conceptos.map((d) => <View key={d.id} style={styles.concepto}><Text style={styles.conceptoNombre}>{d.descripcion}</Text><Text style={styles.conceptoDetalle}>Factura {d.factura.id} · ${Number(d.subtotal).toFixed(2)}</Text></View>)}
+  const { numero, total = 0, fecha_emision, items = [], datos_bancarios } = route.params || {};
+  return <ScrollView contentContainerStyle={styles.container}>
+    <ImageBackground source={{ uri: 'https://images.unsplash.com/photo-1509062522246-3755977927d7?w=900&q=80' }} style={styles.encabezado} imageStyle={styles.encabezadoImagen}><View style={styles.encabezadoCapa}><Text style={styles.encabezadoTitulo}>Comprobante de pago</Text><Text style={styles.encabezadoSubtitulo}>Detalle para presentar al área administrativa</Text></View></ImageBackground>
+    <View style={styles.totalCard}>
+      <Text style={styles.totalLabel}>N.º de comprobante</Text>
+      <Text style={styles.numeroComprobante}>{numero || '—'}</Text>
+      {fecha_emision ? <Text style={styles.conceptoDetalle}>Emitido el {new Date(fecha_emision).toLocaleString('es-AR')}</Text> : null}
+    </View>
+    <View style={styles.resumenCard}>{items.map((d, i) => <View key={i} style={styles.concepto}><Text style={styles.conceptoNombre}>{d.descripcion}</Text><Text style={styles.conceptoDetalle}>Factura {d.factura_id} · ${Number(d.subtotal).toFixed(2)}</Text></View>)}
     <View style={styles.totalCard}><Text style={styles.totalLabel}>Total a pagar</Text><Text style={styles.total}>${Number(total).toFixed(2)}</Text></View></View>
-    <Text style={styles.aviso}>Este comprobante no acredita un pago. Conservá el comprobante de transferencia para su validación.</Text>
-  </View>;
+    {datos_bancarios ? <View style={styles.resumenCard}>
+      <Text style={styles.conceptoNombre}>Datos para la transferencia</Text>
+      <Text style={styles.conceptoDetalle}>Titular: {datos_bancarios.titular}</Text>
+      <Text style={styles.conceptoDetalle}>CUIT: {datos_bancarios.cuit}</Text>
+      <Text style={styles.conceptoDetalle}>Banco: {datos_bancarios.banco}</Text>
+      <Text style={styles.conceptoDetalle}>CBU: {datos_bancarios.cbu}</Text>
+      <Text style={styles.conceptoDetalle}>Alias: {datos_bancarios.alias}</Text>
+    </View> : null}
+    <Text style={styles.aviso}>Este comprobante no acredita un pago. Hacé la transferencia y subí el comprobante desde "Adjuntar transferencia" para que se acredite.</Text>
+  </ScrollView>;
 }
 
-const styles = StyleSheet.create({ container: { flex: 1, padding: 16, gap: 12, backgroundColor: '#f8fafc' }, encabezado: { height: 145, borderRadius: 18, overflow: 'hidden' }, encabezadoImagen: { borderRadius: 18 }, encabezadoCapa: { flex: 1, justifyContent: 'flex-end', padding: 18, backgroundColor: 'rgba(21,78,138,0.7)' }, encabezadoTitulo: { color: '#fff', fontSize: 23, fontWeight: '800' }, encabezadoSubtitulo: { color: '#dbeafe', marginTop: 5 }, filtroCard: { backgroundColor: '#fff', padding: 14, borderRadius: 14, gap: 10 }, label: { color: '#154e8a', fontWeight: '700' }, lista: { gap: 8 }, filtros: { flexDirection: 'row', gap: 10 }, botonFiltro: { flex: 1, minHeight: 42, borderRadius: 9, borderWidth: 1, borderColor: '#1a5fa8', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 5 }, botonFiltroTexto: { color: '#154e8a', fontWeight: '700', fontSize: 12 }, limpiar: { color: '#7652a8', fontWeight: '700', textAlign: 'center' }, item: { padding: 15, borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 14, backgroundColor: '#fff', gap: 6 }, filaTitulo: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, titulo: { color: '#154e8a', fontWeight: '800', fontSize: 17 }, estado: { color: '#17603d', backgroundColor: '#dcfce7', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10, fontSize: 12, fontWeight: '800' }, detalle: { color: '#64748b' }, monto: { color: '#0f172a', fontWeight: '700' }, enlacePdf: { color: '#7652a8', fontWeight: '700', fontSize: 12, marginTop: 6 }, totalCard: { marginTop: 12, backgroundColor: '#f3e8ff', borderRadius: 12, padding: 14, borderLeftWidth: 5, borderLeftColor: '#7652a8' }, totalLabel: { color: '#5b2f88', fontWeight: '700' }, total: { color: '#0f172a', fontWeight: '800', fontSize: 22 }, resumenCard: { backgroundColor: '#fff', padding: 14, borderRadius: 14 }, concepto: { paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' }, conceptoNombre: { color: '#154e8a', fontWeight: '800' }, conceptoDetalle: { color: '#64748b', marginTop: 3 }, aviso: { color: '#92400e', backgroundColor: '#fff7ed', padding: 12, borderRadius: 10 }, vacio: { color: '#64748b', textAlign: 'center', padding: 20 }, error: { color: '#b91c1c', backgroundColor: '#fef2f2', padding: 10, borderRadius: 8 } });
+const styles = StyleSheet.create({ container: { flex: 1, padding: 16, gap: 12, backgroundColor: '#f8fafc' }, encabezado: { height: 145, borderRadius: 18, overflow: 'hidden' }, encabezadoImagen: { borderRadius: 18 }, encabezadoCapa: { flex: 1, justifyContent: 'flex-end', padding: 18, backgroundColor: 'rgba(21,78,138,0.7)' }, encabezadoTitulo: { color: '#fff', fontSize: 23, fontWeight: '800' }, encabezadoSubtitulo: { color: '#dbeafe', marginTop: 5 }, filtroCard: { backgroundColor: '#fff', padding: 14, borderRadius: 14, gap: 10 }, label: { color: '#154e8a', fontWeight: '700' }, lista: { gap: 8 }, filtros: { flexDirection: 'row', gap: 10 }, botonFiltro: { flex: 1, minHeight: 42, borderRadius: 9, borderWidth: 1, borderColor: '#1a5fa8', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 5 }, botonFiltroTexto: { color: '#154e8a', fontWeight: '700', fontSize: 12 }, limpiar: { color: '#7652a8', fontWeight: '700', textAlign: 'center' }, item: { padding: 15, borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 14, backgroundColor: '#fff', gap: 6 }, filaTitulo: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, titulo: { color: '#154e8a', fontWeight: '800', fontSize: 17 }, estado: { color: '#17603d', backgroundColor: '#dcfce7', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10, fontSize: 12, fontWeight: '800' }, detalle: { color: '#64748b' }, monto: { color: '#0f172a', fontWeight: '700' }, enlacePdf: { color: '#7652a8', fontWeight: '700', fontSize: 12, marginTop: 6 }, totalCard: { marginTop: 12, backgroundColor: '#f3e8ff', borderRadius: 12, padding: 14, borderLeftWidth: 5, borderLeftColor: '#7652a8' }, totalLabel: { color: '#5b2f88', fontWeight: '700' }, total: { color: '#0f172a', fontWeight: '800', fontSize: 22 }, numeroComprobante: { color: '#5b2f88', fontWeight: '800', fontSize: 20, letterSpacing: 0.5 }, resumenCard: { backgroundColor: '#fff', padding: 14, borderRadius: 14 }, concepto: { paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' }, conceptoNombre: { color: '#154e8a', fontWeight: '800' }, conceptoDetalle: { color: '#64748b', marginTop: 3 }, aviso: { color: '#92400e', backgroundColor: '#fff7ed', padding: 12, borderRadius: 10 }, vacio: { color: '#64748b', textAlign: 'center', padding: 20 }, error: { color: '#b91c1c', backgroundColor: '#fef2f2', padding: 10, borderRadius: 8 } });

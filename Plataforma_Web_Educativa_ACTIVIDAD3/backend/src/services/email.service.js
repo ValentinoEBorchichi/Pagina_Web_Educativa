@@ -26,23 +26,33 @@ function validarDestino(emailDestino) {
     }
 }
 
-async function enviarFactura(emailDestino, factura, pdf) {
+// Un solo correo por padre con el total a abonar y la composición por hijo
+// (RFM-12/consigna: "un recordatorio del total que cada padre debe abonar"),
+// con la factura de cada hijo adjunta. `items` es [{ alumno, factura, pdf }].
+async function enviarFacturasConsolidadas(emailDestino, nombrePadre, items) {
     validarDestino(emailDestino);
-    if (!pdf || !pdf.buffer) throw new Error('La factura no tiene un PDF válido para adjuntar');
+    if (!items || !items.length) throw new Error('No hay facturas para enviar');
+
+    const total = items.reduce((suma, item) => suma + Number(item.factura.total), 0);
+    const secciones = items.map((item) =>
+        `<li><strong>${item.alumno.nombre} ${item.alumno.apellido}</strong>: ` +
+        `Factura ${item.factura.id} - $${Number(item.factura.total).toFixed(2)}</li>`
+    ).join('');
+    const unaSolaFactura = items.length === 1;
 
     return obtenerTransporter().sendMail({
         from: `Educar para Transformar <${process.env.EMAIL_USER}>`,
         to: emailDestino,
-        subject: `Factura ${factura.id} - Educar para Transformar`,
-        text: `Se adjunta la factura correspondiente al período ${factura.periodo}. Total: $${factura.total}.`,
-        html: `<p>Estimado/a responsable,</p>
-               <p>Se adjunta la factura correspondiente al período <strong>${factura.periodo}</strong>.</p>
-               <p>Total a pagar: <strong>$${factura.total}</strong></p>
+        subject: unaSolaFactura
+            ? `Factura ${items[0].factura.id} - Educar para Transformar`
+            : `Recordatorio de facturación (${items.length} hijos) - Educar para Transformar`,
+        text: `Se adjuntan ${unaSolaFactura ? 'la factura' : 'las facturas'} correspondientes al período ${items[0].factura.periodo}. Total a abonar: $${total.toFixed(2)}.`,
+        html: `<p>Estimado/a ${nombrePadre || 'responsable'},</p>
+               <p>Se ${unaSolaFactura ? 'adjunta la factura' : 'adjuntan las facturas'} correspondiente${unaSolaFactura ? '' : 's'} al período <strong>${items[0].factura.periodo}</strong>:</p>
+               <ul>${secciones}</ul>
+               <p>Total a abonar: <strong>$${total.toFixed(2)}</strong></p>
                <p>Saludos cordiales.<br>Educar para Transformar</p>`,
-        attachments: [{
-            filename: pdf.nombreArchivo,
-            content: pdf.buffer
-        }]
+        attachments: items.map((item) => ({ filename: item.pdf.nombreArchivo, content: item.pdf.buffer }))
     });
 }
 
@@ -79,4 +89,4 @@ async function enviarRecuperacionPassword(emailDestino, nombre, token) {
     });
 }
 
-module.exports = { enviarFactura, enviarRecordatorioDeuda, enviarRecuperacionPassword };
+module.exports = { enviarFacturasConsolidadas, enviarRecordatorioDeuda, enviarRecuperacionPassword };

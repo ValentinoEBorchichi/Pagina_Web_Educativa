@@ -1,7 +1,7 @@
 const cron = require('node-cron');
 const { getPool } = require('../config/db');
 const { generarFacturaPDF } = require('../services/facturaPdf.service');
-const { enviarFactura } = require('../services/email.service');
+const { enviarFacturasConsolidadas } = require('../services/email.service');
 const { subirArchivo, BUCKET_FACTURAS } = require('../config/supabaseStorage');
 
 const CRON_EXPRESION = '0 2 * * *';
@@ -162,6 +162,9 @@ async function generarFacturasDelPeriodo(fecha = new Date()) {
 
     let creadas = 0;
     let duplicadas = 0;
+    // Un correo por padre (no por hijo): se junta acá y se envía después del
+    // loop, una vez que todas las facturas del período están creadas.
+    const porPadre = new Map();
 
     for (const alumno of alumnos) {
         const client = await pool.connect();
@@ -184,7 +187,8 @@ async function generarFacturasDelPeriodo(fecha = new Date()) {
             );
 
             const { rows: datosAlumnoRows } = await client.query(
-                `SELECT a.id, a.nombre, a.apellido, a.dni, u.email AS padre_email
+                `SELECT a.id, a.nombre, a.apellido, a.dni, u.email AS padre_email,
+                        CONCAT(u.nombre, ' ', u.apellido) AS nombre_padre
                  FROM alumnos a
                  INNER JOIN usuarios u ON u.id = a.padre_id
                  WHERE a.id = $1`,
@@ -228,13 +232,14 @@ async function generarFacturasDelPeriodo(fecha = new Date()) {
             try {
                 const pdf = await generarFacturaPDF(facturaParaPdf, conceptos, datosAlumnoRows[0]);
                 await subirArchivo(BUCKET_FACTURAS, pdf.nombreArchivo, pdf.buffer, 'application/pdf');
-                const emailPadre = datosAlumnoRows[0].padre_email;
+                const { padre_email: emailPadre, nombre_padre: nombrePadre } = datosAlumnoRows[0];
                 if (emailPadre && process.env.EMAIL_USER && process.env.EMAIL_PASS) {
-                    await enviarFactura(emailPadre, facturaParaPdf, pdf);
+                    if (!porPadre.has(emailPadre)) porPadre.set(emailPadre, { nombrePadre, items: [] });
+                    porPadre.get(emailPadre).items.push({ alumno: datosAlumnoRows[0], factura: facturaParaPdf, pdf });
                 }
             } catch (pdfError) {
-                // La factura ya fue confirmada; un fallo de PDF o correo no la duplica.
-                console.error(`[facturacion] Error al generar PDF o enviar factura ${facturaId}:`, pdfError.message);
+                // La factura ya fue confirmada; un fallo de PDF no la duplica.
+                console.error(`[facturacion] Error al generar el PDF de la factura ${facturaId}:`, pdfError.message);
             }
         } catch (error) {
             if (iniciada) await client.query('ROLLBACK').catch(() => undefined);
@@ -250,7 +255,17 @@ async function generarFacturasDelPeriodo(fecha = new Date()) {
         }
     }
 
-    return { ejecutado: true, periodo, creadas, duplicadas };
+    let correosEnviados = 0;
+    for (const [emailPadre, datos] of porPadre) {
+        try {
+            await enviarFacturasConsolidadas(emailPadre, datos.nombrePadre, datos.items);
+            correosEnviados += 1;
+        } catch (emailError) {
+            console.error(`[facturacion] Error al enviar el correo consolidado a ${emailPadre}:`, emailError.message);
+        }
+    }
+
+    return { ejecutado: true, periodo, creadas, duplicadas, correosEnviados };
 }
 
 function iniciarFacturacionProgramada() {

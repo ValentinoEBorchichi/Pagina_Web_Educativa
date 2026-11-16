@@ -202,15 +202,19 @@ exports.subirComprobante = async (req, res) => {
 
         // Validación previa (sin lock): evita subir el archivo a Storage si el
         // pedido ya es inválido. Se repite dentro de la transacción, con lock.
-        await resolverDestinoComprobante(pool, { facturaId, cuotaId, monto, user: req.user });
+        const destinoPrevio = await resolverDestinoComprobante(pool, { facturaId, cuotaId, monto, user: req.user });
 
+        // El duplicado se chequea por factura (RFM-06/HU8: "el mismo archivo no
+        // puede cargarse dos veces en la MISMA factura"), no contra toda la
+        // tabla: la misma foto puede volver a usarse como comprobante de otra
+        // factura sin que se la rechace por error.
         const duplicado = await pool.query(
-            'SELECT id FROM comprobante_transferencia WHERE hash_archivo = $1 LIMIT 1',
-            [hashArchivo]
+            'SELECT id FROM comprobante_transferencia WHERE hash_archivo = $1 AND factura_id = $2 LIMIT 1',
+            [hashArchivo, destinoPrevio.facturaId]
         );
 
         if (duplicado.rows.length) {
-            return respuestaErrorComprobante(res, 409, 'El archivo ya fue cargado anteriormente');
+            return respuestaErrorComprobante(res, 409, 'Ese comprobante ya fue cargado para esta factura');
         }
 
         comprobanteGuardado = await guardarComprobante(archivo);
@@ -891,4 +895,88 @@ exports.descargarReciboPdf = async (req, res) => {
         });
         enviarPdf(res, pdf);
     } catch (err) { manejarErrorPg(res, err); }
+};
+
+// Datos de transferencia de la institución (RF.M-05/HU7): la cuenta es
+// ficticia (no hay banco real detrás, es un centro educativo de ejemplo).
+const DATOS_BANCARIOS_INSTITUCION = Object.freeze({
+    titular: 'Centro Educativo Educar para Transformar',
+    cuit: '30-71234567-8',
+    banco: 'Banco Nación Argentina',
+    cbu: '0110599520000012345678',
+    alias: 'EDUCAR.TRANSFORMAR.ARG'
+});
+
+// Comprobante de pago numerado (RFM-05/RN-02/HU7): el padre selecciona ítems
+// de una o varias facturas de UN alumno y el sistema emite una constancia
+// numerada con el detalle. No acredita el pago -eso lo hace el comprobante de
+// transferencia que se sube aparte-, es la "intención de pago" declarada.
+exports.emitirComprobantePago = async (req, res) => {
+    const alumnoId = Number(req.body.alumno_id);
+    const detalleIds = Array.isArray(req.body.factura_detalle_ids)
+        ? [...new Set(req.body.factura_detalle_ids.map(Number))]
+        : [];
+
+    if (!Number.isInteger(alumnoId) || alumnoId <= 0) {
+        return respuestaErrorComprobante(res, 400, 'alumno_id inválido');
+    }
+    if (!detalleIds.length || detalleIds.some((id) => !Number.isInteger(id) || id <= 0)) {
+        return respuestaErrorComprobante(res, 400, 'Indicá al menos un factura_detalle_id válido');
+    }
+
+    const client = await (await getPool()).connect();
+    try {
+        await client.query('BEGIN');
+
+        // Los ítems tienen que ser de facturas del alumno indicado, con saldo
+        // pendiente (no anuladas), y el alumno tiene que ser del padre logueado
+        // (o admin). Mismo filtro de dueño que el resto del módulo.
+        const { rows } = await client.query(
+            `SELECT fd.id, fd.descripcion, fd.subtotal, f.id AS factura_id
+             FROM factura_detalle fd
+             INNER JOIN factura f ON f.id = fd.factura_id
+             INNER JOIN alumnos a ON a.id = f.alumno_id
+             WHERE fd.id = ANY($1::int[]) AND f.alumno_id = $2
+                 AND f.estado <> 'Anulada' AND f.saldo > 0
+                 AND ${filtroDuenio(3, 4)}`,
+            [detalleIds, alumnoId, req.user.rol, req.user.id]
+        );
+
+        if (rows.length !== detalleIds.length) {
+            await client.query('ROLLBACK');
+            return respuestaErrorComprobante(res, 400, 'Alguno de los ítems no existe, no es del alumno indicado o ya no tiene saldo pendiente');
+        }
+
+        const total = rows.reduce((suma, r) => suma + Number(r.subtotal), 0);
+
+        const cabecera = await client.query(
+            `INSERT INTO comprobante_pago (numero, alumno_id, padre_id, total)
+             VALUES ('CP-' || LPAD(nextval('comprobante_pago_numero_seq')::text, 6, '0'), $1, $2, $3)
+             RETURNING id, numero, total, fecha_emision`,
+            [alumnoId, req.user.id, total]
+        );
+        const comprobante = cabecera.rows[0];
+
+        for (const r of rows) {
+            await client.query(
+                `INSERT INTO comprobante_pago_item (comprobante_pago_id, factura_detalle_id, descripcion, subtotal)
+                 VALUES ($1, $2, $3, $4)`,
+                [comprobante.id, r.id, r.descripcion, r.subtotal]
+            );
+        }
+
+        await client.query('COMMIT');
+        res.status(201).json({
+            numero: comprobante.numero,
+            total: comprobante.total,
+            fecha_emision: comprobante.fecha_emision,
+            items: rows.map((r) => ({ descripcion: r.descripcion, subtotal: r.subtotal, factura_id: r.factura_id })),
+            datos_bancarios: DATOS_BANCARIOS_INSTITUCION
+        });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        manejarErrorPg(res, err);
+    } finally {
+        client.release();
+    }
 };
