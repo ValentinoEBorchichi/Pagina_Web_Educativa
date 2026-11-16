@@ -258,7 +258,7 @@ exports.subirComprobante = async (req, res) => {
             await eliminarComprobante(comprobanteGuardado.rutaArchivo);
         }
         if (err.code === '23505') {
-            return respuestaErrorComprobante(res, 409, 'El archivo ya fue cargado anteriormente');
+            return respuestaErrorComprobante(res, 409, 'Ese comprobante ya fue cargado para esta factura');
         }
         return responderError(res, err);
     } finally {

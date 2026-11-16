@@ -485,10 +485,14 @@ CREATE TABLE comprobante_transferencia (
     tamano_bytes          BIGINT        NOT NULL,
     monto                 DECIMAL(12,2) NOT NULL,
     fecha_transferencia   DATE          NOT NULL,
-    hash_archivo          VARCHAR(128)  NOT NULL UNIQUE,
+    hash_archivo          VARCHAR(128)  NOT NULL,
     estado_verificacion   VARCHAR(20)   NOT NULL DEFAULT 'Pendiente',
     observaciones         VARCHAR(500)  NULL,
     fecha_carga           TIMESTAMPTZ   NOT NULL DEFAULT now(),
+    -- RFM-06/HU8: el mismo archivo no puede cargarse dos veces en la MISMA
+    -- factura, pero sí puede reusarse para otra (antes era UNIQUE a secas,
+    -- global para toda la tabla).
+    CONSTRAINT uq_comprobante_factura_hash UNIQUE (factura_id, hash_archivo),
     CONSTRAINT ck_comprobante_monto CHECK (monto > 0),
     CONSTRAINT ck_comprobante_tamano CHECK (tamano_bytes > 0 AND tamano_bytes <= 5242880),
     CONSTRAINT ck_comprobante_estado CHECK (estado_verificacion IN ('Pendiente', 'Aprobado', 'Rechazado'))
