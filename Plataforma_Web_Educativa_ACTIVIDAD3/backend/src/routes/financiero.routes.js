@@ -46,4 +46,9 @@ router.get('/comprobantes/:id/recibo', requireAuth(['admin', 'padre', 'alumno'])
 router.post('/comprobantes/:id/aprobar', requireAuth(['admin']), financieroController.aprobarComprobante);
 router.post('/comprobantes/:id/rechazar', requireAuth(['admin']), financieroController.rechazarComprobante);
 
+// Comprobante de pago numerado (RFM-05/HU7): constancia que emite el sistema
+// con los ítems que el padre eligió pagar. No es el comprobante de
+// transferencia (ver /comprobantes arriba).
+router.post('/comprobante-pago', requireAuth(['admin', 'padre', 'alumno']), financieroController.emitirComprobantePago);
+
 module.exports = router;
