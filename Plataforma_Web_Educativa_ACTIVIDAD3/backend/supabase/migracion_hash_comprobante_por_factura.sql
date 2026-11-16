@@ -27,10 +27,10 @@ BEGIN
     WHERE rel.relname = 'comprobante_transferencia'
       AND con.contype = 'u'
       AND (
-          SELECT array_agg(a.attname ORDER BY a.attname)
+          SELECT array_agg(a.attname::text ORDER BY a.attname)
           FROM unnest(con.conkey) AS k(attnum)
           JOIN pg_attribute a ON a.attrelid = con.conrelid AND a.attnum = k.attnum
-      ) = ARRAY['hash_archivo']
+      ) = ARRAY['hash_archivo']::text[]
     LIMIT 1;
 
     IF v_old_constraint IS NOT NULL THEN
