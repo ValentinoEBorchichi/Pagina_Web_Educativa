@@ -14,6 +14,8 @@ export default function CuentaScreen({ route, navigation }) {
   const [seleccionadas, setSeleccionadas] = useState({});
   const [error, setError] = useState('');
   const [cargando, setCargando] = useState(true);
+  const [emitiendo, setEmitiendo] = useState(false);
+  const [errorComprobante, setErrorComprobante] = useState('');
 
   const cargarCuenta = useCallback(() => {
     let vigente = true;
@@ -49,6 +51,23 @@ export default function CuentaScreen({ route, navigation }) {
   const totalSeleccionado = conceptos.filter((d) => seleccionadas[d.id])
     .reduce((total, d) => total + Number(d.subtotal || 0), 0);
 
+  async function emitirComprobante() {
+    setErrorComprobante(''); setEmitiendo(true);
+    try {
+      const factura_detalle_ids = conceptos.filter((d) => seleccionadas[d.id]).map((d) => d.id);
+      const response = await fetch(apiUrl('/api/financiero/comprobante-pago'), {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ alumno_id: alumnoId, factura_detalle_ids }),
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok || !data) throw new Error(data?.message || 'No se pudo emitir el comprobante.');
+      setSeleccionadas({});
+      navigation.navigate('ComprobanteProvisorio', data);
+    } catch (e) {
+      setErrorComprobante(e instanceof TypeError ? 'No se pudo conectar con el servidor.' : e.message);
+    } finally { setEmitiendo(false); }
+  }
+
   if (cargando) return <ActivityIndicator style={styles.centro} size="large" />;
   if (error) return <View style={styles.container}><View style={styles.errorCard}><Text style={styles.error}>{error}</Text><Pressable style={styles.boton} onPress={() => navigation.goBack()}><Text style={styles.botonTexto}>VOLVER</Text></Pressable></View></View>;
 
@@ -80,9 +99,11 @@ export default function CuentaScreen({ route, navigation }) {
     })}
     <View style={styles.seleccionCard}><Text style={styles.seleccionLabel}>Conceptos seleccionados</Text><Text style={styles.total}>${totalSeleccionado.toFixed(2)}</Text></View>
     <Text style={styles.aviso}>El comprobante es provisorio y no confirma el pago. El pago se acredita al validar la transferencia.</Text>
-    <Pressable style={[styles.boton, !Object.values(seleccionadas).some(Boolean) && styles.botonDeshabilitado]} disabled={!Object.values(seleccionadas).some(Boolean)} onPress={() => navigation.navigate('ComprobanteProvisorio', {
-      conceptos: conceptos.filter((d) => seleccionadas[d.id]), total: totalSeleccionado,
-    })}><Text style={styles.botonTexto}>GENERAR COMPROBANTE PROVISORIO</Text></Pressable>
+    {errorComprobante ? <View style={styles.errorCard}><Text style={styles.error}>{errorComprobante}</Text></View> : null}
+    <Pressable style={[styles.boton, (!Object.values(seleccionadas).some(Boolean) || emitiendo) && styles.botonDeshabilitado]}
+      disabled={!Object.values(seleccionadas).some(Boolean) || emitiendo} onPress={emitirComprobante}>
+      {emitiendo ? <ActivityIndicator color="#fff" /> : <Text style={styles.botonTexto}>GENERAR COMPROBANTE DE PAGO</Text>}
+    </Pressable>
     <Pressable style={styles.botonSecundario} onPress={() => navigation.navigate('Historial', { alumnoId, token })}><Text style={styles.botonSecundarioTexto}>VER HISTORIAL</Text></Pressable>
   </ScrollView>;
 }

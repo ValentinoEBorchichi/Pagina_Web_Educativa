@@ -30,6 +30,7 @@ const API_PATHS = new Set([
   '/api/financiero/facturas/elegir-plan',
   '/api/financiero/facturas/cuotas',
   '/api/financiero/facturas/pdf',
+  '/api/financiero/comprobante-pago',
 ]);
 const ALUMNO_RECURSOS = new Set(['inscripciones', 'estado-cuenta']);
 
