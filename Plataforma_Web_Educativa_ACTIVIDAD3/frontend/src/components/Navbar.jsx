@@ -98,14 +98,14 @@ const Navbar = () => {
         {/* Buttons */}
         <div className="topbar-btns">
           {!user ? (
-            <div style={{ display: 'flex', gap: '8px' }}>
+            <div className="topbar-login-buttons" style={{ display: 'flex', gap: '8px' }}>
               <Link to="/login?role=padre" className="btn btn-green" style={{ fontSize: '0.8rem', padding: '10px 18px' }}>👨‍👩‍👧 Padres</Link>
               <Link to="/login?role=alumno" className="btn btn-violet" style={{ fontSize: '0.8rem', padding: '10px 18px' }}>🎒 Alumnos</Link>
               <Link to="/login?role=docente" className="btn btn-blue" style={{ fontSize: '0.8rem', padding: '10px 18px' }}>👨‍🏫 Docentes</Link>
             </div>
           ) : (
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-              <span style={{ fontWeight: 800, color: 'var(--blue)', fontSize: '0.8rem', marginRight: '8px' }}>Hola, {user.nombre}</span>
+            <div className="topbar-user-info" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <span className="topbar-user-greeting" style={{ fontWeight: 800, color: 'var(--blue)', fontSize: '0.8rem', marginRight: '8px' }}>Hola, {user.nombre}</span>
               <Link to={`/${user.rol}`} className="btn btn-violet" style={{ fontSize: '0.75rem', padding: '6px 12px' }}>Mi Panel</Link>
               <button onClick={handleLogout} className="btn" style={{ background: 'white', color: 'var(--text)', fontSize: '0.75rem', padding: '6px 12px', border: '1px solid #e2e8f0' }}>Salir</button>
             </div>
@@ -117,6 +117,12 @@ const Navbar = () => {
       </div>
       {/* Mobile Nav */}
       <nav className={`mobile-nav ${isOpen ? 'open' : ''}`} id="mobileNav">
+        {!user && <>
+          <Link to="/login?role=padre" onClick={() => setIsOpen(false)}>👨‍👩‍👧 Padres</Link>
+          <Link to="/login?role=alumno" onClick={() => setIsOpen(false)}>🎒 Alumnos</Link>
+          <Link to="/login?role=docente" onClick={() => setIsOpen(false)}>👨‍🏫 Docentes</Link>
+        </>}
+        {user && <Link to={`/${user.rol}`} onClick={() => setIsOpen(false)}>Mi Panel</Link>}
         <a href="/" onClick={() => setIsOpen(false)}>Inicio</a>
         <a href="#institucion" onClick={() => setIsOpen(false)}>Nosotros</a>
         <a href="#niveles" onClick={() => setIsOpen(false)}>Niveles Educativos</a>
