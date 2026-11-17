@@ -510,6 +510,26 @@ footer {
   .quick-grid { grid-template-columns: 1fr; }
   .inst-cards, .servicios-grid, .niveles-grid, .noticias-grid { grid-template-columns: repeat(2, 1fr); }
   .footer-grid { grid-template-columns: 1fr 1fr; }
+}
+
+/* Debajo de 2 columnas las tarjetas de íconos quedan apretadas: en celular
+   pasan a una sola columna (antes esta regla nunca se aplicaba porque el
+   @media de arriba se había quedado sin cerrar). */
+@media (max-width: 600px) {
+  .quick-grid,
+  .inst-cards, .servicios-grid, .niveles-grid, .noticias-grid { grid-template-columns: 1fr; }
+  .footer-grid { grid-template-columns: 1fr; }
+}
+
+/* Los 3 botones de acceso (Padres/Alumnos/Docentes) tienen tamaño fijo por
+   estilo inline y nunca entraban junto al logo y el menú hamburguesa en un
+   celular: empujaban todo fuera de pantalla. En celular se ocultan (quedan
+   disponibles arriba de todo dentro del propio menú hamburguesa, ver
+   Navbar.jsx) y solo se muestra el ícono del logo. */
+@media (max-width: 640px) {
+  .topbar-login-buttons, .topbar-user-greeting { display: none !important; }
+}
+
 /* ─────────────────────────────────────────
    PULIDO FINAL & UX
 ───────────────────────────────────────── */
@@ -549,5 +569,4 @@ input:focus, select:focus, textarea:focus {
     overflow-x: auto;
     white-space: nowrap;
   }
-}
 }
