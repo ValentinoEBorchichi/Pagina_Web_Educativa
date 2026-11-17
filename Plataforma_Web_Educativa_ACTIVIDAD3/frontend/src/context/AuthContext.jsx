@@ -11,12 +11,13 @@ export const AuthProvider = ({ children }) => {
     const [loading, setLoading] = useState(true);
     const inactivityTimer = useRef(null);
 
+    // Al abrir o recargar la página siempre se empieza deslogueado: una
+    // sesión de una visita anterior (por ejemplo, de otra persona probando
+    // como administrador en esta misma compu) no debe quedar activa sin que
+    // nadie vuelva a escribir sus credenciales.
     useEffect(() => {
-        const savedUser = localStorage.getItem('user');
-        const token = localStorage.getItem('token');
-        if (savedUser && token) {
-            setUser(JSON.parse(savedUser));
-        }
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
         setLoading(false);
     }, []);
 
